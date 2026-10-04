@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="AdlpDBConfigurator/AdlpDBConfigurator.csproj" />
+  <Project Path="AdlpdsConfig/AdlpdsConfig.csproj" />
+  <Project Path="AdlpLib/AdlpLib.csproj" />
+</Solution>

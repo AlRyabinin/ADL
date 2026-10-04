@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "С выбором": {
+      "commandName": "Project"
+    },
+    "default": {
+      "commandName": "Project"
+    }
+  }
+}
