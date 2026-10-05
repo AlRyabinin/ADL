@@ -362,5 +362,15 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                 UseWaitCursor = false;
             }
         }
+
+        private void LoadButton_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void EditButton_Click(object sender, EventArgs e)
+        {
+
+        }
     }
 }

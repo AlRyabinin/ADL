@@ -38,6 +38,8 @@
             label3 = new Label();
             DeleteDeviceButton = new Button();
             CreateDeviceButton = new Button();
+            LoadButton = new Button();
+            EditButton = new Button();
             SuspendLayout();
             // 
             // GroupsComboBox
@@ -115,7 +117,7 @@
             // 
             // DeleteDeviceButton
             // 
-            DeleteDeviceButton.Location = new Point(532, 182);
+            DeleteDeviceButton.Location = new Point(370, 182);
             DeleteDeviceButton.Name = "DeleteDeviceButton";
             DeleteDeviceButton.Size = new Size(75, 23);
             DeleteDeviceButton.TabIndex = 10;
@@ -133,11 +135,33 @@
             CreateDeviceButton.UseVisualStyleBackColor = true;
             CreateDeviceButton.Click += CreateDeviceButton_Click;
             // 
+            // LoadButton
+            // 
+            LoadButton.Location = new Point(451, 182);
+            LoadButton.Name = "LoadButton";
+            LoadButton.Size = new Size(75, 23);
+            LoadButton.TabIndex = 11;
+            LoadButton.Text = "Загрузить";
+            LoadButton.UseVisualStyleBackColor = true;
+            LoadButton.Click += LoadButton_Click;
+            // 
+            // EditButton
+            // 
+            EditButton.Location = new Point(532, 182);
+            EditButton.Name = "EditButton";
+            EditButton.Size = new Size(75, 23);
+            EditButton.TabIndex = 12;
+            EditButton.Text = "Изменить";
+            EditButton.UseVisualStyleBackColor = true;
+            EditButton.Click += EditButton_Click;
+            // 
             // miDevicesGroup
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(700, 692);
+            ClientSize = new Size(700, 216);
+            Controls.Add(EditButton);
+            Controls.Add(LoadButton);
             Controls.Add(DeleteDeviceButton);
             Controls.Add(CreateDeviceButton);
             Controls.Add(label3);
@@ -166,5 +190,7 @@
         private Label label3;
         private Button DeleteDeviceButton;
         private Button CreateDeviceButton;
+        private Button LoadButton;
+        private Button EditButton;
     }
 }
