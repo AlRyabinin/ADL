@@ -475,20 +475,32 @@ namespace AdlpLib.Configuration.Application
             return result;
         }
 
-        /// <summary>Идентификаторы устройств группы в порядке Position.</summary>
+        /// <summary>
+        /// Идентификаторы устройств группы, отсортированные по Block (затем по имени).
+        /// Устройства с Block = 0 уезжают в конец списка.
+        /// </summary>
         public async Task<List<long>> GetDeviceIdsAsync(long groupId,
                                                         CancellationToken ct = default)
         {
             await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"SELECT DeviceId FROM DeviceGroupDevices
-                             WHERE GroupId = @g ORDER BY Position;";
+
+            cmd.CommandText = @"
+                SELECT dgd.DeviceId
+                  FROM DeviceGroupDevices dgd
+                  INNER JOIN Devices d ON d.Id = dgd.DeviceId
+                 WHERE dgd.GroupId = @g
+                 ORDER BY CASE WHEN d.Block = 0 THEN 1 ELSE 0 END,
+                          d.Block,
+                          d.Name;";
+
             AddParam(cmd, "@g", groupId);
 
             var list = new List<long>();
             await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while(await r.ReadAsync(ct).ConfigureAwait(false))
                 list.Add(r.GetInt64(0));
+
             return list;
         }
 

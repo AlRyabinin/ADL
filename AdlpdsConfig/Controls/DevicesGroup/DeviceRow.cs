@@ -20,9 +20,9 @@ namespace AdlpdsConfig.Controls.DevicesGroup
             Device = device;
             DisplayText = device switch
             {
-                PuConfigDto pu => $"[PU] [{pu.Block}] {Device.Name} ({pu.Mac})",
-                ExecConfigDto ex => $"[EXEC] [{ex.Block}] {device.Name} ({ex.Mac})",
-                _ => $"[?]  [{device.Block}] {device.Name} ({device.Mac})"
+                PuConfigDto pu => $"[PU] [{pu.DeviceType}] [{pu.Block}] {Device.Name} ({pu.Mac})",
+                ExecConfigDto ex => $"[EXEC] [{ex.DeviceType}] [{ex.Block}] {device.Name} ({ex.Mac})",
+                _ => $"[?]  [{device.Block}] [{device.DeviceType}] {device.Name} ({device.Mac})"
             };
         }
 

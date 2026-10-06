@@ -40,6 +40,7 @@
             CreateDeviceButton = new Button();
             LoadButton = new Button();
             EditButton = new Button();
+            RefreshButton = new Button();
             SuspendLayout();
             // 
             // GroupsComboBox
@@ -155,11 +156,22 @@
             EditButton.UseVisualStyleBackColor = true;
             EditButton.Click += EditButton_Click;
             // 
+            // RefreshButton
+            // 
+            RefreshButton.Location = new Point(12, 182);
+            RefreshButton.Name = "RefreshButton";
+            RefreshButton.Size = new Size(75, 23);
+            RefreshButton.TabIndex = 13;
+            RefreshButton.Text = "Обновить";
+            RefreshButton.UseVisualStyleBackColor = true;
+            RefreshButton.Click += RefreshButton_Click;
+            // 
             // miDevicesGroup
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(700, 216);
+            Controls.Add(RefreshButton);
             Controls.Add(EditButton);
             Controls.Add(LoadButton);
             Controls.Add(DeleteDeviceButton);
@@ -192,5 +204,6 @@
         private Button CreateDeviceButton;
         private Button LoadButton;
         private Button EditButton;
+        private Button RefreshButton;
     }
 }

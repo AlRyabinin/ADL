@@ -18,19 +18,21 @@ namespace AdlpLib.Models.Devices
         public string Name { get; set; }
 
         [JsonPropertyOrder(2)]
-        public string Mac { get; set; }
+        public string DeviceType { get; set; }
 
         [JsonPropertyOrder(3)]
-        public string Ip { get; set; }
+        public string Mac { get; set; }
 
         [JsonPropertyOrder(4)]
-        public string Mask { get; set; }
+        public string Ip { get; set; }
 
         [JsonPropertyOrder(5)]
-        public string Gateway { get; set; }
+        public string Mask { get; set; }
 
         [JsonPropertyOrder(6)]
+        public string Gateway { get; set; }
+
+        [JsonPropertyOrder(7)]
         public int Block { get; set; }
-        
     }
 }

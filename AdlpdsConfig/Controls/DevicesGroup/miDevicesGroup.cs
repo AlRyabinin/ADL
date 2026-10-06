@@ -13,6 +13,19 @@ namespace AdlpdsConfig.Controls.DevicesGroup
 {
     public partial class miDevicesGroup : Form
     {
+        /// <summary>
+        /// Порядок типов устройств для сортировки при расстановке Block.
+        /// Всё, чего нет в словаре, уедет в конец списка.
+        /// </summary>
+        private static readonly Dictionary<string, int> DeviceTypeOrder =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["IKB"] = 1,
+                ["DIM220"] = 2,
+                ["Dimmer cabinet"] = 3,
+                ["NetGate"] = 4,
+            };
+
         private readonly DevicesGroupRepository _groupRepository;
         private readonly DeviceConfigRepository _devicesRepository;
 
@@ -246,8 +259,7 @@ namespace AdlpdsConfig.Controls.DevicesGroup
 
         private async void CreateDeviceButton_Click(object sender, EventArgs e)
         {
-            var selectedGroup = SelectedGroup;
-            if(selectedGroup == null)
+            if(SelectedGroup == null)
             {
                 CenteredMessageBox.Show(this, "Сначала выберите группу.", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -282,7 +294,7 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                         long deviceId = await _devicesRepository.SaveAsync(newDevice);
                         newDevice.Id = deviceId;
 
-                        DevicesGroupDto groupDto = await _groupRepository.LoadAsync(selectedGroup.Id);
+                        DevicesGroupDto groupDto = await _groupRepository.LoadAsync(SelectedGroup.Id);
                         if(groupDto == null)
                         {
                             CenteredMessageBox.Show(this, "Группа не найдена в БД.", "Ошибка",
@@ -297,7 +309,9 @@ namespace AdlpdsConfig.Controls.DevicesGroup
 
                         await _groupRepository.SaveAsync(groupDto);
 
-                        await ReloadAsync(selectedGroup.Id);
+                        await ReorderAllDevicesAsync();
+
+                        await ReloadAsync(SelectedGroup.Id);
 
                         CenteredMessageBox.Show(this, "Устройство успешно добавлено и прикреплено к группе.",
                             "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -329,7 +343,7 @@ namespace AdlpdsConfig.Controls.DevicesGroup
             }
 
             var answer = CenteredMessageBox.Show(this,
-                $"Удалить устройство «{device.Ip}» полностью?\r\n" +
+                $"Удалить устройство «{device.Name} ({device.Mac})» полностью?\r\n" +
                 "Оно будет убрано из группы и удалено из БД.",
                 "Подтверждение",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
@@ -348,6 +362,8 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                 }
 
                 await _devicesRepository.DeleteAsync(device.Id);
+
+                await ReorderAllDevicesAsync();
 
                 await ReloadAsync(selectedGroup.Id);
             }
@@ -368,9 +384,73 @@ namespace AdlpdsConfig.Controls.DevicesGroup
 
         }
 
+        /// <summary>
+        /// Пересчитывает поле Block у всех устройств: сначала по порядку типов,
+        /// внутри типа — по имени. Block идёт подряд: 1, 2, 3, ...
+        /// </summary>
+        private async Task ReorderAllDevicesAsync()
+        {
+            var headers = await _devicesRepository.GetAllHeadersAsync();
+            if(headers == null || headers.Count == 0) return;
+
+            var sorted = headers
+                .OrderBy(h => DeviceTypeOrder.TryGetValue(h.DeviceType ?? "", out int order)
+                              ? order
+                              : int.MaxValue)
+                .ThenBy(h => h.DeviceType, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(h => h.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            int block = 1;
+            foreach(var h in sorted)
+            {
+                // Пропускаем, если Block уже правильный — экономим запросы к БД
+                if(h.Block == block)
+                {
+                    block++;
+                    continue;
+                }
+
+                var dto = await _devicesRepository.LoadAsync(h.Id);
+                if(dto == null) { block++; continue; }
+
+                dto.Block = block;
+                await _devicesRepository.SaveAsync(dto);
+                block++;
+            }
+        }
+
         private void EditButton_Click(object sender, EventArgs e)
         {
 
+        }
+
+        private async void RefreshButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                RefreshButton.Enabled = false;
+                UseWaitCursor = true;
+
+                await ReorderAllDevicesAsync();
+
+                await ReloadAsync(SelectedGroup?.Id);
+
+                CenteredMessageBox.Show(this,
+                    "Сортировка завершена. Поле Block обновлено.",
+                    "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch(Exception ex)
+            {
+                CenteredMessageBox.Show(this,
+                    "Ошибка при обновлении: " + ex.Message,
+                    "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                RefreshButton.Enabled = true;
+                UseWaitCursor = false;
+            }
         }
     }
 }

@@ -23,6 +23,7 @@ namespace AdlpLib.Configuration.Application
         public long Id { get; set; }
         public string ConfigType { get; set; } = "";
         public string Name { get; set; } = "";
+        public string DeviceType { get; set; } = "";
         public string Mac { get; set; } = "";
         public string Ip { get; set; } = "";
         public string Mask { get; set; } = "";
@@ -84,6 +85,7 @@ namespace AdlpLib.Configuration.Application
             var needed = new (string Name, string SqliteType, string MySqlType, bool NotNull)[]
             {
                 ("Name",      "TEXT",         "VARCHAR(255)",  true),
+                ("DeviceType", "TEXT", "VARCHAR(100)", true),
                 ("CreatedAt", "TEXT",         "DATETIME",      false),
                 ("CreatedBy", "TEXT",         "VARCHAR(100)",  false),
                 ("UpdatedAt", "TEXT",         "DATETIME",      false),
@@ -194,7 +196,7 @@ namespace AdlpLib.Configuration.Application
         {
             var required = new Dictionary<string, string[]>
             {
-                ["Devices"] = new[] { "Id", "Name", "ConfigType", "Mac", "Ip", "Mask", "Gateway", "Block" },
+                ["Devices"] = new[] { "Id", "Name", "ConfigType", "DeviceType", "Mac", "Ip", "Mask", "Gateway", "Block" },
                 ["PuDevices"] = new[] { "DeviceId", "Priority", "Brightness", "SleepTimeout" },
                 ["ExecDevices"] = new[] { "DeviceId", "BaseChannel" },
             };
@@ -300,11 +302,12 @@ namespace AdlpLib.Configuration.Application
             if(dto.Id == 0)
             {
                 await ExecAsync(conn, tx,
-                    @"INSERT INTO Devices (Name, ConfigType, Mac, Ip, Mask, Gateway, Block)
-                        VALUES (@n, @t, @m, @ip, @mask, @gw, @b);",
+                    @"INSERT INTO Devices (Name, ConfigType, DeviceType, Mac, Ip, Mask, Gateway, Block)
+                        VALUES (@n, @t, @dt, @m, @ip, @mask, @gw, @b);",
                     ct,
                     ("@n", dto.Name ?? ""),
                     ("@t", configType),
+                    ("@dt", dto.DeviceType ?? ""),
                     ("@m", dto.Mac ?? ""),
                     ("@ip", dto.Ip ?? ""),
                     ("@mask", dto.Mask ?? ""),
@@ -316,12 +319,13 @@ namespace AdlpLib.Configuration.Application
 
             await ExecAsync(conn, tx,
                 @"UPDATE Devices
-                     SET Name = @n, ConfigType = @t, Mac = @m, Ip = @ip,
+                     SET Name = @n, ConfigType = @t, DeviceType = @dt, Mac = @m, Ip = @ip,
                          Mask = @mask, Gateway = @gw, Block = @b
                    WHERE Id = @id;",
                 ct,
                 ("@n", dto.Name ?? ""),
                 ("@t", configType),
+                ("@dt", dto.DeviceType ?? ""),
                 ("@m", dto.Mac ?? ""),
                 ("@ip", dto.Ip ?? ""),
                 ("@mask", dto.Mask ?? ""),
@@ -627,7 +631,7 @@ namespace AdlpLib.Configuration.Application
             await using(var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = @"
-                    SELECT d.Name, d.Mac, d.Ip, d.Mask, d.Gateway, d.Block,
+                    SELECT d.Name, d.DeviceType, d.Mac, d.Ip, d.Mask, d.Gateway, d.Block,
                        p.Priority, p.PictureSwitchTime, p.PageCount,
                        p.SwapX, p.SwapY, p.Brightness, p.BrightnessSleep, p.SleepTimeout
                       FROM Devices d
@@ -639,19 +643,20 @@ namespace AdlpLib.Configuration.Application
                 if(await r.ReadAsync(ct).ConfigureAwait(false))
                 {
                     dto.Name = GetStringSafe(r, 0);
-                    dto.Mac = GetStringSafe(r, 1);
-                    dto.Ip = GetStringSafe(r, 2);
-                    dto.Mask = GetStringSafe(r, 3);
-                    dto.Gateway = GetStringSafe(r, 4);
-                    dto.Block = GetInt32Safe(r, 5);
-                    dto.Priority = GetInt32Safe(r, 6);
-                    dto.PictureSwitchTime = GetInt32Safe(r, 7);
-                    dto.PageCount = GetInt32Safe(r, 8);
-                    dto.SwapX = GetInt32Safe(r, 9);
-                    dto.SwapY = GetInt32Safe(r, 10);
-                    dto.Brightness = GetInt32Safe(r, 11);
-                    dto.BrightnessSleep = GetInt32Safe(r, 12);
-                    dto.SleepTimeout = GetInt32Safe(r, 13);
+                    dto.DeviceType = GetStringSafe(r, 1);
+                    dto.Mac = GetStringSafe(r, 2);
+                    dto.Ip = GetStringSafe(r, 3);
+                    dto.Mask = GetStringSafe(r, 4);
+                    dto.Gateway = GetStringSafe(r, 5);
+                    dto.Block = GetInt32Safe(r, 6);
+                    dto.Priority = GetInt32Safe(r, 7);
+                    dto.PictureSwitchTime = GetInt32Safe(r, 8);
+                    dto.PageCount = GetInt32Safe(r, 9);
+                    dto.SwapX = GetInt32Safe(r, 10);
+                    dto.SwapY = GetInt32Safe(r, 11);
+                    dto.Brightness = GetInt32Safe(r, 12);
+                    dto.BrightnessSleep = GetInt32Safe(r, 13);
+                    dto.SleepTimeout = GetInt32Safe(r, 14);
                 }
             }
 
@@ -798,7 +803,7 @@ namespace AdlpLib.Configuration.Application
             await using(var cmd = conn.CreateCommand())
             {
                 cmd.CommandText = @"
-                    SELECT d.Name, d.Mac, d.Ip, d.Mask, d.Gateway, d.Block, e.BaseChannel
+                    SELECT d.Name, d.DeviceType, d.Mac, d.Ip, d.Mask, d.Gateway, d.Block, e.BaseChannel
                       FROM Devices d
                       INNER JOIN ExecDevices e ON e.DeviceId = d.Id
                      WHERE d.Id = @id;";
@@ -808,12 +813,13 @@ namespace AdlpLib.Configuration.Application
                 if(await r.ReadAsync(ct).ConfigureAwait(false))
                 {
                     dto.Name = GetStringSafe(r, 0);
-                    dto.Mac = GetStringSafe(r, 1);
-                    dto.Ip = GetStringSafe(r, 2);
-                    dto.Mask = GetStringSafe(r, 3);
-                    dto.Gateway = GetStringSafe(r, 4);
-                    dto.Block = GetInt32Safe(r, 5);
-                    dto.BaseChannel = GetStringSafe(r, 6);
+                    dto.DeviceType = GetStringSafe(r, 1);
+                    dto.Mac = GetStringSafe(r, 2);
+                    dto.Ip = GetStringSafe(r, 3);
+                    dto.Mask = GetStringSafe(r, 4);
+                    dto.Gateway = GetStringSafe(r, 5);
+                    dto.Block = GetInt32Safe(r, 6);
+                    dto.BaseChannel = GetStringSafe(r, 7);
                 }
             }
 
@@ -918,7 +924,7 @@ namespace AdlpLib.Configuration.Application
             await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT Id, Name, ConfigType, Mac, Ip, Mask, Gateway, Block
+                SELECT Id, Name, ConfigType, DeviceType, Mac, Ip, Mask, Gateway, Block
                   FROM Devices
                  ORDER BY ConfigType, Mac;";
 
@@ -931,11 +937,12 @@ namespace AdlpLib.Configuration.Application
                     Id = r.GetInt64(0),
                     Name = GetStringSafe(r, 1),
                     ConfigType = GetStringSafe(r, 2),
-                    Mac = GetStringSafe(r, 3),
-                    Ip = GetStringSafe(r, 4),
-                    Mask = GetStringSafe(r, 5),
-                    Gateway = GetStringSafe(r, 6),
-                    Block = GetInt32Safe(r, 7)
+                    DeviceType = GetStringSafe(r, 3),
+                    Mac = GetStringSafe(r, 4),
+                    Ip = GetStringSafe(r, 5),
+                    Mask = GetStringSafe(r, 6),
+                    Gateway = GetStringSafe(r, 7),
+                    Block = GetInt32Safe(r, 8)
                 });
             }
             return list;
@@ -1225,6 +1232,7 @@ namespace AdlpLib.Configuration.Application
             Id          INTEGER PRIMARY KEY AUTOINCREMENT,
             Name        TEXT NOT NULL DEFAULT '',
             ConfigType  TEXT NOT NULL,
+            DeviceType  TEXT NOT NULL DEFAULT '',
             Mac         TEXT NOT NULL DEFAULT '',
             Ip          TEXT NOT NULL DEFAULT '',
             Mask        TEXT NOT NULL DEFAULT '',
@@ -1383,6 +1391,7 @@ namespace AdlpLib.Configuration.Application
             Id          INT AUTO_INCREMENT PRIMARY KEY,
             Name        VARCHAR(255) NOT NULL DEFAULT '',
             ConfigType  VARCHAR(10) NOT NULL,
+            DeviceType  VARCHAR(100) NOT NULL DEFAULT '',
             Mac         VARCHAR(32) NOT NULL DEFAULT '',
             Ip          VARCHAR(64) NOT NULL DEFAULT '',
             Mask        VARCHAR(64) NOT NULL DEFAULT '',

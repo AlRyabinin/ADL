@@ -1,4 +1,5 @@
-﻿using AdlpLib.LiveConfig;
+﻿using AdlpLib.Core;
+using AdlpLib.LiveConfig;
 using AdlpLib.Models.Devices;
 using AdlpLib.Models.Devices.Exec;
 using AdlpLib.Models.Devices.PU;
@@ -18,6 +19,8 @@ namespace AdlpdsConfig.Controls.Devices
     {
         public DeviceConfigDtoBase CreatedDevice { get; private set; }
 
+        public string SelectedType { get; set; }
+
         public CreateDeviceForm()
         {
             InitializeComponent();
@@ -34,9 +37,9 @@ namespace AdlpdsConfig.Controls.Devices
             CountComboBox.SelectedIndex = -1;
             CountComboBox.Text = string.Empty;
 
-            string selectedType = TypeComboBox.SelectedItem.ToString();
+            SelectedType = TypeComboBox.SelectedItem.ToString();
 
-            switch(selectedType)
+            switch(SelectedType)
             {
                 case "IKB":
                     CountComboBox.Items.AddRange(new object[] { "24" });
@@ -76,7 +79,7 @@ namespace AdlpdsConfig.Controls.Devices
                 return;
             }
 
-            string selectedType = TypeComboBox.SelectedItem.ToString();
+            SelectedType = TypeComboBox.SelectedItem.ToString();
 
             if(!int.TryParse(CountComboBox.SelectedItem.ToString(), out int channelCount))
             {
@@ -84,23 +87,61 @@ namespace AdlpdsConfig.Controls.Devices
                 return;
             }
 
-            switch(selectedType)
+            switch(SelectedType)
             {
                 case "IKB":
                 case "NetGate":
-                    CreatedDevice = new PuConfigDto()
+                {
+                    var pu = new PuConfigDto
                     {
+                        DeviceType = SelectedType,
                         Channels = new List<LiveControlChannelCfg>(channelCount)
                     };
-                    break;
 
+                    for(int i = 1; i <= channelCount; i++)
+                    {
+                        pu.Channels.Add(new LiveControlChannelCfg
+                        {
+                            Local = i,
+                            Name = $"Канал {i}",   
+                            Index = 0,             
+                            Type = (int)ChannelType.CHTYPE_CHANNEL
+                        });
+                    }
+
+                    CreatedDevice = pu;
+                    break;
+                }
                 case "DIM220":
                 case "Dimmer cabinet":
-                    CreatedDevice = new ExecConfigDto()
+                {
+                    var exec = new ExecConfigDto
                     {
+                        DeviceType = SelectedType,
                         Channels = new List<LiveChannelCfg>(channelCount)
                     };
+
+                    for(int i = 1; i <= channelCount; i++)
+                    {
+                        exec.Channels.Add(new LiveChannelCfg
+                        {
+                            Local = i,
+                            GlobalIndex = i,       // по умолчанию = локальному, потом можно править
+                            Name = $"Канал {i}",
+                            Control = "adlp",
+                            Wide = false,
+                            StreamId = 0,
+                            Patch = 0,
+                            Preheat = 0,
+                            Limit = 100,
+                            Curve = 0,
+                            SwitchDelay = 0
+                        });
+                    }
+
+                    CreatedDevice = exec;
                     break;
+                }
 
                 default:
                     MessageBox.Show("Неизвестный тип устройства.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
