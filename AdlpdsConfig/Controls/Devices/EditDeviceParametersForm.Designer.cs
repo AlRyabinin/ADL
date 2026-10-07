@@ -39,10 +39,11 @@ namespace AdlpdsConfig.Controls.Devices
             label3 = new Label();
             label4 = new Label();
             MainDataGridView = new DataGridView();
-            tabControl1 = new TabControl();
+            tablesTab = new TabControl();
             tabPage1 = new TabPage();
+            CancelButton = new Button();
             ((System.ComponentModel.ISupportInitialize)MainDataGridView).BeginInit();
-            tabControl1.SuspendLayout();
+            tablesTab.SuspendLayout();
             tabPage1.SuspendLayout();
             SuspendLayout();
             // 
@@ -64,7 +65,7 @@ namespace AdlpdsConfig.Controls.Devices
             // 
             // SaveButton
             // 
-            SaveButton.Location = new Point(465, 415);
+            SaveButton.Location = new Point(465, 472);
             SaveButton.Name = "SaveButton";
             SaveButton.Size = new Size(75, 23);
             SaveButton.TabIndex = 2;
@@ -126,19 +127,20 @@ namespace AdlpdsConfig.Controls.Devices
             // MainDataGridView
             // 
             MainDataGridView.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            MainDataGridView.Location = new Point(0, 0);
+            MainDataGridView.Dock = DockStyle.Fill;
+            MainDataGridView.Location = new Point(3, 3);
             MainDataGridView.Name = "MainDataGridView";
-            MainDataGridView.Size = new Size(520, 193);
+            MainDataGridView.Size = new Size(514, 244);
             MainDataGridView.TabIndex = 9;
             // 
-            // tabControl1
+            // tablesTab
             // 
-            tabControl1.Controls.Add(tabPage1);
-            tabControl1.Location = new Point(12, 188);
-            tabControl1.Name = "tabControl1";
-            tabControl1.SelectedIndex = 0;
-            tabControl1.Size = new Size(528, 221);
-            tabControl1.TabIndex = 10;
+            tablesTab.Controls.Add(tabPage1);
+            tablesTab.Location = new Point(12, 188);
+            tablesTab.Name = "tablesTab";
+            tablesTab.SelectedIndex = 0;
+            tablesTab.Size = new Size(528, 278);
+            tablesTab.TabIndex = 10;
             // 
             // tabPage1
             // 
@@ -146,17 +148,28 @@ namespace AdlpdsConfig.Controls.Devices
             tabPage1.Location = new Point(4, 24);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(3);
-            tabPage1.Size = new Size(520, 193);
+            tabPage1.Size = new Size(520, 250);
             tabPage1.TabIndex = 0;
             tabPage1.Text = "Каналы";
             tabPage1.UseVisualStyleBackColor = true;
+            // 
+            // CancelButton
+            // 
+            CancelButton.Location = new Point(12, 472);
+            CancelButton.Name = "CancelButton";
+            CancelButton.Size = new Size(75, 23);
+            CancelButton.TabIndex = 11;
+            CancelButton.Text = "Отмена";
+            CancelButton.UseVisualStyleBackColor = true;
+            CancelButton.Click += CancelButton_Click;
             // 
             // EditDeviceParametersForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(552, 450);
-            Controls.Add(tabControl1);
+            ClientSize = new Size(552, 507);
+            Controls.Add(CancelButton);
+            Controls.Add(tablesTab);
             Controls.Add(label4);
             Controls.Add(label3);
             Controls.Add(MaskTextBox);
@@ -171,7 +184,7 @@ namespace AdlpdsConfig.Controls.Devices
             Name = "EditDeviceParametersForm";
             Text = "Параметры устройства";
             ((System.ComponentModel.ISupportInitialize)MainDataGridView).EndInit();
-            tabControl1.ResumeLayout(false);
+            tablesTab.ResumeLayout(false);
             tabPage1.ResumeLayout(false);
             ResumeLayout(false);
             PerformLayout();
@@ -189,7 +202,8 @@ namespace AdlpdsConfig.Controls.Devices
         private Label label3;
         private Label label4;
         private DataGridView MainDataGridView;
-        private TabControl tabControl1;
+        private TabControl tablesTab;
         private TabPage tabPage1;
+        private Button CancelButton;
     }
 }

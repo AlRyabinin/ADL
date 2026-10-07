@@ -1,0 +1,551 @@
+{
+  "GroupName": "Первая группа123",
+  "Devices": [
+    {
+      "configType": "PU",
+      "Name": "IKB24",
+      "DeviceType": "IKB",
+      "Mac": "00:00:00:00:00:00",
+      "Ip": "1.1.1.1",
+      "Mask": "255.255.255.0",
+      "Gateway": "",
+      "Block": 1,
+      "Priority": 5,
+      "PictureSwitchTime": 0,
+      "PageCount": 1,
+      "SwapX": 0,
+      "SwapY": 0,
+      "Brightness": 100,
+      "BrightnessSleep": 100,
+      "SleepTimeout": 0,
+      "Channels": [
+        {
+          "Local": 1,
+          "Name": "Канал 1",
+          "Index": 1,
+          "Type": 1
+        },
+        {
+          "Local": 2,
+          "Name": "Канал 2",
+          "Index": 2,
+          "Type": 1
+        },
+        {
+          "Local": 3,
+          "Name": "Канал 3",
+          "Index": 3,
+          "Type": 1
+        },
+        {
+          "Local": 4,
+          "Name": "Канал 4",
+          "Index": 4,
+          "Type": 1
+        },
+        {
+          "Local": 5,
+          "Name": "Канал 5",
+          "Index": 5,
+          "Type": 1
+        },
+        {
+          "Local": 6,
+          "Name": "Канал 6",
+          "Index": 6,
+          "Type": 1
+        },
+        {
+          "Local": 7,
+          "Name": "Канал 7",
+          "Index": 7,
+          "Type": 1
+        },
+        {
+          "Local": 8,
+          "Name": "Канал 8",
+          "Index": 8,
+          "Type": 1
+        },
+        {
+          "Local": 9,
+          "Name": "Канал 9",
+          "Index": 9,
+          "Type": 1
+        },
+        {
+          "Local": 10,
+          "Name": "Канал 10",
+          "Index": 10,
+          "Type": 1
+        },
+        {
+          "Local": 11,
+          "Name": "Канал 11",
+          "Index": 11,
+          "Type": 1
+        },
+        {
+          "Local": 12,
+          "Name": "Канал 12",
+          "Index": 12,
+          "Type": 1
+        },
+        {
+          "Local": 13,
+          "Name": "Канал 13",
+          "Index": 13,
+          "Type": 1
+        },
+        {
+          "Local": 14,
+          "Name": "Канал 14",
+          "Index": 14,
+          "Type": 1
+        },
+        {
+          "Local": 15,
+          "Name": "Канал 15",
+          "Index": 15,
+          "Type": 1
+        },
+        {
+          "Local": 16,
+          "Name": "Канал 16",
+          "Index": 16,
+          "Type": 1
+        },
+        {
+          "Local": 17,
+          "Name": "Канал 17",
+          "Index": 17,
+          "Type": 1
+        },
+        {
+          "Local": 18,
+          "Name": "Канал 18",
+          "Index": 18,
+          "Type": 1
+        },
+        {
+          "Local": 19,
+          "Name": "Канал 19",
+          "Index": 19,
+          "Type": 1
+        },
+        {
+          "Local": 20,
+          "Name": "Канал 20",
+          "Index": 20,
+          "Type": 1
+        },
+        {
+          "Local": 21,
+          "Name": "Канал 21",
+          "Index": 21,
+          "Type": 1
+        },
+        {
+          "Local": 22,
+          "Name": "Канал 22",
+          "Index": 22,
+          "Type": 1
+        },
+        {
+          "Local": 23,
+          "Name": "Канал 23",
+          "Index": 23,
+          "Type": 1
+        },
+        {
+          "Local": 24,
+          "Name": "Канал 24",
+          "Index": 24,
+          "Type": 1
+        }
+      ],
+      "Groups": [],
+      "Pictures": [],
+      "Buttons": []
+    },
+    {
+      "configType": "PU",
+      "Name": "Первое устройство",
+      "DeviceType": "IKB",
+      "Mac": "11:11:11:11:11:11",
+      "Ip": "1.1.1.1",
+      "Mask": "255.255.255.0",
+      "Gateway": "",
+      "Block": 2,
+      "Priority": 5,
+      "PictureSwitchTime": 0,
+      "PageCount": 1,
+      "SwapX": 0,
+      "SwapY": 0,
+      "Brightness": 100,
+      "BrightnessSleep": 100,
+      "SleepTimeout": 0,
+      "Channels": [
+        {
+          "Local": 1,
+          "Name": "Канал 25",
+          "Index": 25,
+          "Type": 1
+        },
+        {
+          "Local": 2,
+          "Name": "Канал 26",
+          "Index": 26,
+          "Type": 1
+        },
+        {
+          "Local": 3,
+          "Name": "Канал 27",
+          "Index": 27,
+          "Type": 1
+        },
+        {
+          "Local": 4,
+          "Name": "Канал 28",
+          "Index": 28,
+          "Type": 1
+        },
+        {
+          "Local": 5,
+          "Name": "Канал 29",
+          "Index": 29,
+          "Type": 1
+        },
+        {
+          "Local": 6,
+          "Name": "Канал 30",
+          "Index": 30,
+          "Type": 1
+        },
+        {
+          "Local": 7,
+          "Name": "Канал 31",
+          "Index": 31,
+          "Type": 1
+        },
+        {
+          "Local": 8,
+          "Name": "Канал 32",
+          "Index": 32,
+          "Type": 1
+        },
+        {
+          "Local": 9,
+          "Name": "Канал 33",
+          "Index": 33,
+          "Type": 1
+        },
+        {
+          "Local": 10,
+          "Name": "Канал 34",
+          "Index": 34,
+          "Type": 1
+        },
+        {
+          "Local": 11,
+          "Name": "Канал 35",
+          "Index": 35,
+          "Type": 1
+        },
+        {
+          "Local": 12,
+          "Name": "Канал 36",
+          "Index": 36,
+          "Type": 1
+        },
+        {
+          "Local": 13,
+          "Name": "Канал 37",
+          "Index": 37,
+          "Type": 1
+        },
+        {
+          "Local": 14,
+          "Name": "Канал 38",
+          "Index": 38,
+          "Type": 1
+        },
+        {
+          "Local": 15,
+          "Name": "Канал 39",
+          "Index": 39,
+          "Type": 1
+        },
+        {
+          "Local": 16,
+          "Name": "Канал 40",
+          "Index": 40,
+          "Type": 1
+        },
+        {
+          "Local": 17,
+          "Name": "Канал 41",
+          "Index": 41,
+          "Type": 1
+        },
+        {
+          "Local": 18,
+          "Name": "Канал 42",
+          "Index": 42,
+          "Type": 1
+        },
+        {
+          "Local": 19,
+          "Name": "Канал 43",
+          "Index": 43,
+          "Type": 1
+        },
+        {
+          "Local": 20,
+          "Name": "Канал 44",
+          "Index": 44,
+          "Type": 1
+        },
+        {
+          "Local": 21,
+          "Name": "Канал 45",
+          "Index": 45,
+          "Type": 1
+        },
+        {
+          "Local": 22,
+          "Name": "Канал 46",
+          "Index": 46,
+          "Type": 1
+        },
+        {
+          "Local": 23,
+          "Name": "Канал 47",
+          "Index": 47,
+          "Type": 1
+        },
+        {
+          "Local": 24,
+          "Name": "Канал 48",
+          "Index": 48,
+          "Type": 1
+        }
+      ],
+      "Groups": [],
+      "Pictures": [],
+      "Buttons": [
+        {
+          "Local": 0,
+          "Page": 12,
+          "LocalChannel": 0,
+          "PosX": 0,
+          "PosY": 0,
+          "Icon": 0,
+          "Color": 0
+        },
+        {
+          "Local": 0,
+          "Page": 13,
+          "LocalChannel": 0,
+          "PosX": 0,
+          "PosY": 0,
+          "Icon": 0,
+          "Color": 0
+        },
+        {
+          "Local": 0,
+          "Page": 14,
+          "LocalChannel": 0,
+          "PosX": 0,
+          "PosY": 0,
+          "Icon": 0,
+          "Color": 0
+        }
+      ]
+    },
+    {
+      "configType": "EXEC",
+      "Name": "Dimmer220",
+      "DeviceType": "DIM220",
+      "Mac": "00:00:00:00:01:00",
+      "Ip": "2.2.2.2",
+      "Mask": "255.255.255.0",
+      "Gateway": "",
+      "Block": 4,
+      "BaseChannel": "73",
+      "Channels": [
+        {
+          "Local": 1,
+          "GlobalIndex": 73,
+          "Name": "Канал 73",
+          "Control": "adlp",
+          "Wide": false,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 2,
+          "GlobalIndex": 74,
+          "Name": "Канал 74",
+          "Control": "adlp",
+          "Wide": false,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 3,
+          "GlobalIndex": 75,
+          "Name": "Канал 75",
+          "Control": "adlp",
+          "Wide": false,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 4,
+          "GlobalIndex": 76,
+          "Name": "Канал 76",
+          "Control": "adlp",
+          "Wide": false,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 5,
+          "GlobalIndex": 77,
+          "Name": "Канал 77",
+          "Control": "adlp",
+          "Wide": false,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 6,
+          "GlobalIndex": 78,
+          "Name": "Канал 78",
+          "Control": "adlp",
+          "Wide": false,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        }
+      ],
+      "Streams": []
+    },
+    {
+      "configType": "EXEC",
+      "Name": "Второе",
+      "DeviceType": "DIM220",
+      "Mac": "22:22:22:22:22:22",
+      "Ip": "2.2.2.2",
+      "Mask": "255.255.255.255",
+      "Gateway": "",
+      "Block": 5,
+      "BaseChannel": "79",
+      "Channels": [
+        {
+          "Local": 1,
+          "GlobalIndex": 79,
+          "Name": "Канал 79",
+          "Control": "adlp",
+          "Wide": true,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 2,
+          "GlobalIndex": 80,
+          "Name": "Канал 80",
+          "Control": "adlp",
+          "Wide": true,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 3,
+          "GlobalIndex": 81,
+          "Name": "Канал 81",
+          "Control": "adlp",
+          "Wide": true,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 4,
+          "GlobalIndex": 82,
+          "Name": "Канал 82",
+          "Control": "adlp",
+          "Wide": true,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 5,
+          "GlobalIndex": 83,
+          "Name": "Канал 83",
+          "Control": "adlp",
+          "Wide": true,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        },
+        {
+          "Local": 6,
+          "GlobalIndex": 84,
+          "Name": "Канал 84",
+          "Control": "adlp",
+          "Wide": true,
+          "StreamId": 0,
+          "Patch": 0,
+          "Preheat": 0,
+          "Limit": 100,
+          "Curve": 0,
+          "SwitchDelay": 0
+        }
+      ],
+      "Streams": []
+    }
+  ]
+}

@@ -1,11 +1,15 @@
 ﻿using AdlpdsConfig.Controls.Devices;
 using AdlpdsConfig.Utils;
 using AdlpLib.Configuration.Application;
+using AdlpLib.LiveConfig;
 using AdlpLib.Models.Devices;
+using AdlpLib.Models.Devices.Exec;
+using AdlpLib.Models.Devices.PU;
 using AdlpLib.Models.DevicesGroup;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -106,7 +110,6 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                 UseWaitCursor = false;
                 Enabled = true;
 
-                groupNameTextBox.Text = SelectedGroup?.Name ?? "";
                 UpdateButtonsState();
             }
 
@@ -169,7 +172,6 @@ namespace AdlpdsConfig.Controls.DevicesGroup
         {
             var sel = SelectedGroup;
             DeleteButton.Enabled = sel != null;
-            CreateButton.Enabled = !string.IsNullOrWhiteSpace(groupNameTextBox.Text);
         }
 
         private async void GroupsComboBox_SelectedIndexChanged(object sender, EventArgs e)
@@ -177,7 +179,6 @@ namespace AdlpdsConfig.Controls.DevicesGroup
             if(_loading) return;
 
             var sel = SelectedGroup;
-            groupNameTextBox.Text = sel?.Name ?? "";
 
             await LoadGroupDevicesAsync(sel?.Id);
 
@@ -379,9 +380,169 @@ namespace AdlpdsConfig.Controls.DevicesGroup
             }
         }
 
-        private void LoadButton_Click(object sender, EventArgs e)
+        private async void LoadButton_Click(object sender, EventArgs e)
         {
+            using var ofd = new OpenFileDialog
+            {
+                Filter = "JSON files (*.json)|*.json",
+                Multiselect = true
+            };
+            if(ofd.ShowDialog(this) != DialogResult.OK) return;
 
+            try
+            {
+                UseWaitCursor = true;
+                Enabled = false;
+
+                // Определяем, в какую группу складывать устройства
+                long targetGroupId;
+                var currentGroup = SelectedGroup;
+
+                if(currentGroup != null)
+                {
+                    targetGroupId = currentGroup.Id;
+                }
+                else
+                {
+                    // Группы нет — создаём «Импорт»
+                    const string importGroupName = "Импорт";
+                    long? existing = await _groupRepository.FindGroupIdByNameAsync(importGroupName);
+                    targetGroupId = existing ?? await _groupRepository.SaveAsync(
+                        new DevicesGroupDto { Name = importGroupName });
+                }
+
+                var groupDto = await _groupRepository.LoadAsync(targetGroupId)
+                               ?? new DevicesGroupDto { Id = targetGroupId };
+                if(groupDto.DeviceIds == null) groupDto.DeviceIds = new List<long>();
+
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                int imported = 0;
+                int failed = 0;
+                int cancelled = 0;
+
+                foreach(var fileName in ofd.FileNames)
+                {
+                    try
+                    {
+                        string json = await File.ReadAllTextAsync(fileName);
+                        var device = JsonSerializer.Deserialize<DeviceConfigDtoBase>(json, options);
+
+                        if(device == null)
+                        {
+                            failed++;
+                            continue;
+                        }
+
+                        // Заполняем обязательные поля из имени файла
+                        NormalizeDevice(device, Path.GetFileNameWithoutExtension(fileName));
+
+                        // Открываем диалог редактирования ПЕРЕД сохранением в БД
+                        using(var editDlg = new EditDeviceParametersForm(device))
+                        {
+                            if(editDlg.ShowDialog(this) != DialogResult.OK)
+                            {
+                                // Пользователь отменил — пропускаем этот файл
+                                cancelled++;
+                                continue;
+                            }
+
+                            DeviceConfigDtoBase editedDevice = editDlg.CurrentDevice;
+
+                            // Id = 0, чтобы репозиторий создал новую запись
+                            editedDevice.Id = 0;
+                            long deviceId = await _devicesRepository.SaveAsync(editedDevice);
+                            editedDevice.Id = deviceId;
+
+                            if(!groupDto.DeviceIds.Contains(deviceId))
+                                groupDto.DeviceIds.Add(deviceId);
+
+                            imported++;
+                        }
+                    }
+                    catch(Exception ex)
+                    {
+                        failed++;
+                        System.Diagnostics.Debug.WriteLine(
+                            $"Ошибка импорта файла {fileName}: {ex.Message}");
+                    }
+                }
+
+                await _groupRepository.SaveAsync(groupDto);
+
+                // Пересчитываем блоки и каналы
+                await ReorderAllDevicesAsync();
+                await ReloadAsync(targetGroupId);
+
+                string msg = $"Загружено устройств: {imported}.";
+                if(cancelled > 0) msg += $"\nОтменено пользователем: {cancelled}.";
+                if(failed > 0) msg += $"\nНе удалось загрузить: {failed}.";
+
+                CenteredMessageBox.Show(this, msg, "Загрузка завершена",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch(Exception ex)
+            {
+                CenteredMessageBox.Show(this, "Ошибка загрузки: " + ex.Message,
+                    "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                UseWaitCursor = false;
+                Enabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Заполняет обязательные поля Name и DeviceType, если они пусты.
+        /// DeviceType извлекается из имени файла (например, Config_IKB_... → IKB).
+        /// </summary>
+        private void NormalizeDevice(DeviceConfigDtoBase device, string fileName)
+        {
+            // Имя устройства — из имени файла, если не задано
+            if(string.IsNullOrWhiteSpace(device.Name))
+            {
+                device.Name = !string.IsNullOrWhiteSpace(fileName)
+                    ? fileName
+                    : (!string.IsNullOrWhiteSpace(device.Mac) ? device.Mac : "Device");
+            }
+
+            // Тип устройства — из имени файла (формат: Config_XXX_...)
+            if(string.IsNullOrWhiteSpace(device.DeviceType))
+            {
+                string detected = TryExtractDeviceType(fileName);
+
+                if(!string.IsNullOrWhiteSpace(detected))
+                {
+                    device.DeviceType = detected;
+                }
+                else
+                {
+                    // Fallback по фактическому типу DTO
+                    device.DeviceType = device switch
+                    {
+                        PuConfigDto => "PU",
+                        ExecConfigDto => "IKB",
+                        _ => "Unknown"
+                    };
+                }
+            }
+        }
+
+        /// <summary>
+        /// Извлекает тип устройства из имени файла: Config_IKB_20261007_121424 → IKB.
+        /// </summary>
+        private static string TryExtractDeviceType(string fileName)
+        {
+            if(string.IsNullOrWhiteSpace(fileName)) return null;
+
+            var parts = fileName.Split('_', StringSplitOptions.RemoveEmptyEntries);
+            // Ожидаем формат Config_<TYPE>_<...>
+            if(parts.Length >= 2 &&
+                parts[0].Equals("Config", StringComparison.OrdinalIgnoreCase))
+            {
+                return parts[1];
+            }
+            return null;
         }
 
         /// <summary>
@@ -401,28 +562,110 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                 .ThenBy(h => h.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            int baseChannel = 1;
             int block = 1;
+
             foreach(var h in sorted)
             {
-                // Пропускаем, если Block уже правильный — экономим запросы к БД
-                if(h.Block == block)
-                {
-                    block++;
-                    continue;
-                }
-
                 var dto = await _devicesRepository.LoadAsync(h.Id);
                 if(dto == null) { block++; continue; }
 
                 dto.Block = block;
+
+                int channelCount = 0;
+
+                switch(dto)
+                {
+                    case ExecConfigDto exec:
+                        channelCount = exec.Channels?.Count ?? 0;
+                        if(channelCount == 0)
+                            channelCount = LiveConfigDefaults.ChannelsPerBlock;
+
+                        if(exec.Channels != null)
+                        {
+                            foreach(var ch in exec.Channels)
+                            {
+                                ch.GlobalIndex = baseChannel + (ch.Local - 1);
+                                ch.Name = $"Канал {baseChannel + (ch.Local - 1)}";
+                            }
+                        }
+
+                        exec.BaseChannel = baseChannel.ToString();
+                        break;
+
+                    case PuConfigDto pu:
+                        channelCount = pu.Channels?.Count ?? 0;
+
+                        if(channelCount == 0)
+                            channelCount = LiveConfigDefaults.ChannelsPerBlock;
+
+                        if(pu.Channels != null)
+                        {
+                            foreach(var ch in pu.Channels)
+                            {
+                                ch.Index = baseChannel + (ch.Local - 1);
+                                ch.Name = $"Канал {baseChannel + (ch.Local - 1)}";
+                            }
+                        }
+                        break;
+                }
+
                 await _devicesRepository.SaveAsync(dto);
+
+                baseChannel += channelCount;
                 block++;
             }
         }
-
-        private void EditButton_Click(object sender, EventArgs e)
+        private async void EditButton_Click(object sender, EventArgs e)
         {
+            var selectedGroup = SelectedGroup;
+            var device = SelectedDevice;
 
+            if(selectedGroup == null || device == null)
+            {
+                CenteredMessageBox.Show(this, "Выберите устройство для редактирования.", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                EditButton.Enabled = false;
+                UseWaitCursor = true;
+
+                var freshDevice = await _devicesRepository.LoadAsync(device.Id);
+                if(freshDevice == null)
+                {
+                    CenteredMessageBox.Show(this, "Устройство не найдено в БД.", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                using(var editDlg = new EditDeviceParametersForm(freshDevice))
+                {
+                    if(editDlg.ShowDialog(this) != DialogResult.OK)
+                        return;
+
+                    var edited = editDlg.CurrentDevice;
+                    await _devicesRepository.SaveAsync(edited);
+
+                    await ReorderAllDevicesAsync();
+                    await ReloadAsync(selectedGroup.Id);
+
+                    CenteredMessageBox.Show(this, "Изменения сохранены.", "Успех",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            catch(Exception ex)
+            {
+                CenteredMessageBox.Show(this, "Ошибка при редактировании: " + ex.Message, "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                EditButton.Enabled = true;
+                UseWaitCursor = false;
+            }
         }
 
         private async void RefreshButton_Click(object sender, EventArgs e)
@@ -452,5 +695,199 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                 UseWaitCursor = false;
             }
         }
+
+        private async void LoadGroupButton_Click(object sender, EventArgs e)
+        {
+            using var ofd = new OpenFileDialog { Filter = "JSON files (*.json)|*.json" };
+            if(ofd.ShowDialog(this) != DialogResult.OK) return;
+
+            try
+            {
+                UseWaitCursor = true;
+                Enabled = false;
+
+                string json = await File.ReadAllTextAsync(ofd.FileName);
+
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var package = JsonSerializer.Deserialize<DevicesGroupPackage>(json, options);
+
+                if(package == null || string.IsNullOrWhiteSpace(package.GroupName))
+                {
+                    CenteredMessageBox.Show(this, "Некорректный файл JSON.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                // Проверяем, существует ли группа с таким именем
+                long? existingGroupId = await _groupRepository.FindGroupIdByNameAsync(package.GroupName);
+                long groupId;
+
+                if(existingGroupId != null)
+                {
+                    var answer = CenteredMessageBox.Show(this, $"Группа «{package.GroupName}» уже существует. Перезаписать?", "Вопрос", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if(answer != DialogResult.Yes) return;
+
+                    groupId = existingGroupId.Value;
+                    var existingGroup = await _groupRepository.LoadAsync(groupId);
+                    if(existingGroup != null)
+                    {
+                        existingGroup.DeviceIds.Clear();
+                        await _groupRepository.SaveAsync(existingGroup);
+                    }
+                }
+                else
+                {
+                    groupId = await _groupRepository.SaveAsync(new DevicesGroupDto { Name = package.GroupName });
+                }
+
+                var groupDto = await _groupRepository.LoadAsync(groupId) ?? new DevicesGroupDto { Id = groupId, Name = package.GroupName };
+                if(groupDto.DeviceIds == null) groupDto.DeviceIds = new List<long>();
+
+                foreach(var device in package.Devices)
+                {
+                    device.Id = 0;
+                    long deviceId = await _devicesRepository.SaveAsync(device);
+                    device.Id = deviceId;
+
+                    if(!groupDto.DeviceIds.Contains(deviceId))
+                    {
+                        groupDto.DeviceIds.Add(deviceId);
+                    }
+                }
+
+                await _groupRepository.SaveAsync(groupDto);
+                await ReloadAsync(groupId);
+                CenteredMessageBox.Show(this, "Группа успешно загружена.", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch(Exception ex)
+            {
+                CenteredMessageBox.Show(this, "Ошибка загрузки: " + ex.Message, "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                UseWaitCursor = false;
+                Enabled = true;
+            }
+        }
+
+        private async void SaveGroupButton_Click(object sender, EventArgs e)
+        {
+            var selectedGroup = SelectedGroup;
+            if(selectedGroup == null)
+            {
+                CenteredMessageBox.Show(this, "Выберите группу для сохранения.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using var sfd = new SaveFileDialog { Filter = "JSON files (*.json)|*.json", FileName = $"{selectedGroup.Name}.json" };
+            if(sfd.ShowDialog(this) != DialogResult.OK) return;
+
+            try
+            {
+                UseWaitCursor = true;
+                Enabled = false;
+
+                var devices = await _groupRepository.GetDevicesAsync(selectedGroup.Id);
+
+                var package = new DevicesGroupPackage
+                {
+                    GroupName = selectedGroup.Name,
+                    Devices = devices
+                };
+
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                };
+
+                string json = JsonSerializer.Serialize(package, options);
+                await File.WriteAllTextAsync(sfd.FileName, json);
+
+                CenteredMessageBox.Show(this, "Группа успешно сохранена в JSON.", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch(Exception ex)
+            {
+                CenteredMessageBox.Show(this, "Ошибка сохранения: " + ex.Message, "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                UseWaitCursor = false;
+                Enabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Переименование выбранной группы.
+        /// Открывает GroupNameDialog, при OK — сохраняет новое имя в БД
+        /// и перезагружает список.
+        /// </summary>
+        private async void EditGroupButton_Click(object sender, EventArgs e)
+        {
+            var selected = SelectedGroup;
+            if(selected == null)
+            {
+                CenteredMessageBox.Show(this, "Сначала выберите группу.", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using var dlg = new GroupNameDialog(selected.Name ?? "");
+            if(dlg.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            string newName = dlg.GroupName?.Trim();
+            if(string.IsNullOrWhiteSpace(newName))
+                return;
+
+            if(string.Equals(newName, selected.Name, StringComparison.Ordinal))
+                return;
+
+            try
+            {
+                EditGroupButton.Enabled = false;
+                UseWaitCursor = true;
+
+                long? existingId = await _groupRepository.FindGroupIdByNameAsync(newName);
+                if(existingId != null && existingId.Value != selected.Id)
+                {
+                    CenteredMessageBox.Show(this,
+                        $"Группа с именем «{newName}» уже существует.",
+                        "Проверка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                var groupDto = await _groupRepository.LoadAsync(selected.Id);
+                if(groupDto == null)
+                {
+                    CenteredMessageBox.Show(this,
+                        "Группа не найдена в БД.",
+                        "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                groupDto.Name = newName;
+                await _groupRepository.SaveAsync(groupDto);
+
+                await ReloadAsync(selected.Id);
+            }
+            catch(Exception ex)
+            {
+                CenteredMessageBox.Show(this,
+                    "Не удалось переименовать группу:\r\n" + ex.Message,
+                    "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                EditGroupButton.Enabled = true;
+                UseWaitCursor = false;
+            }
+        }
+    }
+
+
+    public class DevicesGroupPackage
+    {
+        public string GroupName { get; set; }
+        public List<DeviceConfigDtoBase> Devices { get; set; }
     }
 }

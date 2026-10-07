@@ -30,17 +30,18 @@
         {
             GroupsComboBox = new ComboBox();
             label1 = new Label();
-            label2 = new Label();
-            groupNameTextBox = new TextBox();
             CreateButton = new Button();
             DeleteButton = new Button();
             DevicesComboBox = new ComboBox();
             label3 = new Label();
             DeleteDeviceButton = new Button();
             CreateDeviceButton = new Button();
-            LoadButton = new Button();
+            LoadDeviceButton = new Button();
             EditButton = new Button();
             RefreshButton = new Button();
+            LoadGroupButton = new Button();
+            SaveGroupButton = new Button();
+            EditGroupButton = new Button();
             SuspendLayout();
             // 
             // GroupsComboBox
@@ -62,22 +63,6 @@
             label1.TabIndex = 1;
             label1.Text = "Группы:";
             // 
-            // label2
-            // 
-            label2.AutoSize = true;
-            label2.Location = new Point(12, 85);
-            label2.Name = "label2";
-            label2.Size = new Size(62, 15);
-            label2.TabIndex = 2;
-            label2.Text = "Название:";
-            // 
-            // groupNameTextBox
-            // 
-            groupNameTextBox.Location = new Point(12, 103);
-            groupNameTextBox.Name = "groupNameTextBox";
-            groupNameTextBox.Size = new Size(676, 23);
-            groupNameTextBox.TabIndex = 3;
-            // 
             // CreateButton
             // 
             CreateButton.Location = new Point(613, 58);
@@ -90,7 +75,7 @@
             // 
             // DeleteButton
             // 
-            DeleteButton.Location = new Point(532, 58);
+            DeleteButton.Location = new Point(289, 58);
             DeleteButton.Name = "DeleteButton";
             DeleteButton.Size = new Size(75, 23);
             DeleteButton.TabIndex = 5;
@@ -102,7 +87,7 @@
             // 
             DevicesComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             DevicesComboBox.FormattingEnabled = true;
-            DevicesComboBox.Location = new Point(12, 153);
+            DevicesComboBox.Location = new Point(12, 101);
             DevicesComboBox.Name = "DevicesComboBox";
             DevicesComboBox.Size = new Size(676, 23);
             DevicesComboBox.TabIndex = 6;
@@ -110,7 +95,7 @@
             // label3
             // 
             label3.AutoSize = true;
-            label3.Location = new Point(12, 135);
+            label3.Location = new Point(12, 83);
             label3.Name = "label3";
             label3.Size = new Size(72, 15);
             label3.TabIndex = 7;
@@ -118,7 +103,7 @@
             // 
             // DeleteDeviceButton
             // 
-            DeleteDeviceButton.Location = new Point(370, 182);
+            DeleteDeviceButton.Location = new Point(370, 130);
             DeleteDeviceButton.Name = "DeleteDeviceButton";
             DeleteDeviceButton.Size = new Size(75, 23);
             DeleteDeviceButton.TabIndex = 10;
@@ -128,7 +113,7 @@
             // 
             // CreateDeviceButton
             // 
-            CreateDeviceButton.Location = new Point(613, 182);
+            CreateDeviceButton.Location = new Point(613, 130);
             CreateDeviceButton.Name = "CreateDeviceButton";
             CreateDeviceButton.Size = new Size(75, 23);
             CreateDeviceButton.TabIndex = 9;
@@ -136,19 +121,19 @@
             CreateDeviceButton.UseVisualStyleBackColor = true;
             CreateDeviceButton.Click += CreateDeviceButton_Click;
             // 
-            // LoadButton
+            // LoadDeviceButton
             // 
-            LoadButton.Location = new Point(451, 182);
-            LoadButton.Name = "LoadButton";
-            LoadButton.Size = new Size(75, 23);
-            LoadButton.TabIndex = 11;
-            LoadButton.Text = "Загрузить";
-            LoadButton.UseVisualStyleBackColor = true;
-            LoadButton.Click += LoadButton_Click;
+            LoadDeviceButton.Location = new Point(451, 130);
+            LoadDeviceButton.Name = "LoadDeviceButton";
+            LoadDeviceButton.Size = new Size(75, 23);
+            LoadDeviceButton.TabIndex = 11;
+            LoadDeviceButton.Text = "Загрузить";
+            LoadDeviceButton.UseVisualStyleBackColor = true;
+            LoadDeviceButton.Click += LoadButton_Click;
             // 
             // EditButton
             // 
-            EditButton.Location = new Point(532, 182);
+            EditButton.Location = new Point(532, 130);
             EditButton.Name = "EditButton";
             EditButton.Size = new Size(75, 23);
             EditButton.TabIndex = 12;
@@ -158,7 +143,7 @@
             // 
             // RefreshButton
             // 
-            RefreshButton.Location = new Point(12, 182);
+            RefreshButton.Location = new Point(12, 130);
             RefreshButton.Name = "RefreshButton";
             RefreshButton.Size = new Size(75, 23);
             RefreshButton.TabIndex = 13;
@@ -166,24 +151,57 @@
             RefreshButton.UseVisualStyleBackColor = true;
             RefreshButton.Click += RefreshButton_Click;
             // 
+            // LoadGroupButton
+            // 
+            LoadGroupButton.Location = new Point(451, 58);
+            LoadGroupButton.Name = "LoadGroupButton";
+            LoadGroupButton.Size = new Size(75, 23);
+            LoadGroupButton.TabIndex = 14;
+            LoadGroupButton.Text = "Загрузить";
+            LoadGroupButton.UseVisualStyleBackColor = true;
+            LoadGroupButton.Click += LoadGroupButton_Click;
+            // 
+            // SaveGroupButton
+            // 
+            SaveGroupButton.Location = new Point(532, 58);
+            SaveGroupButton.Name = "SaveGroupButton";
+            SaveGroupButton.Size = new Size(75, 23);
+            SaveGroupButton.TabIndex = 15;
+            SaveGroupButton.Text = "Сохранить";
+            SaveGroupButton.UseVisualStyleBackColor = true;
+            SaveGroupButton.Click += SaveGroupButton_Click;
+            // 
+            // EditGroupButton
+            // 
+            EditGroupButton.Location = new Point(370, 58);
+            EditGroupButton.Name = "EditGroupButton";
+            EditGroupButton.Size = new Size(75, 23);
+            EditGroupButton.TabIndex = 16;
+            EditGroupButton.Text = "Изменить";
+            EditGroupButton.UseVisualStyleBackColor = true;
+            EditGroupButton.Click += EditGroupButton_Click;
+            // 
             // miDevicesGroup
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(700, 216);
+            ClientSize = new Size(700, 161);
+            Controls.Add(EditGroupButton);
+            Controls.Add(SaveGroupButton);
+            Controls.Add(LoadGroupButton);
             Controls.Add(RefreshButton);
             Controls.Add(EditButton);
-            Controls.Add(LoadButton);
+            Controls.Add(LoadDeviceButton);
             Controls.Add(DeleteDeviceButton);
             Controls.Add(CreateDeviceButton);
             Controls.Add(label3);
             Controls.Add(DevicesComboBox);
             Controls.Add(DeleteButton);
             Controls.Add(CreateButton);
-            Controls.Add(groupNameTextBox);
-            Controls.Add(label2);
             Controls.Add(label1);
             Controls.Add(GroupsComboBox);
+            MaximizeBox = false;
+            MinimizeBox = false;
             Name = "miDevicesGroup";
             Text = "Группы устройств";
             ResumeLayout(false);
@@ -194,16 +212,17 @@
 
         private ComboBox GroupsComboBox;
         private Label label1;
-        private Label label2;
-        private TextBox groupNameTextBox;
         private Button CreateButton;
         private Button DeleteButton;
         private ComboBox DevicesComboBox;
         private Label label3;
         private Button DeleteDeviceButton;
         private Button CreateDeviceButton;
-        private Button LoadButton;
+        private Button LoadDeviceButton;
         private Button EditButton;
         private Button RefreshButton;
+        private Button LoadGroupButton;
+        private Button SaveGroupButton;
+        private Button EditGroupButton;
     }
 }

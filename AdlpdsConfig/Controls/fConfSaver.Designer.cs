@@ -239,6 +239,8 @@
             Controls.Add(MaskLabel);
             Controls.Add(IPLabel);
             Controls.Add(MacLabel);
+            MaximizeBox = false;
+            MinimizeBox = false;
             Name = "fConfSaver";
             Text = "Configuration saver";
             Load += fConfSaver_Load;
