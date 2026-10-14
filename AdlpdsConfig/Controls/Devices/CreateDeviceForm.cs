@@ -91,27 +91,6 @@ namespace AdlpdsConfig.Controls.Devices
             {
                 case "IKB":
                 case "NetGate":
-                {
-                    var pu = new PuConfigDto
-                    {
-                        DeviceType = SelectedType,
-                        Channels = new List<LiveControlChannelCfg>(channelCount)
-                    };
-
-                    for(int i = 1; i <= channelCount; i++)
-                    {
-                        pu.Channels.Add(new LiveControlChannelCfg
-                        {
-                            Local = i,
-                            Name = $"Канал {i}",   
-                            Index = 0,             
-                            Type = (int)ChannelType.CHTYPE_CHANNEL
-                        });
-                    }
-
-                    CreatedDevice = pu;
-                    break;
-                }
                 case "DIM220":
                 case "Dimmer cabinet":
                 {
@@ -126,7 +105,7 @@ namespace AdlpdsConfig.Controls.Devices
                         exec.Channels.Add(new LiveChannelCfg
                         {
                             Local = i,
-                            GlobalIndex = i,       // по умолчанию = локальному, потом можно править
+                            GlobalIndex = i,      
                             Name = $"Канал {i}",
                             Control = "adlp",
                             Wide = false,

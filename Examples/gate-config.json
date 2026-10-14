@@ -1,0 +1,706 @@
+{
+  "Block": 1,
+  "ConveyorCount": 4,
+  "Conveyors": [
+    {
+      "Local": 1,
+      "SourceA": {
+        "Protocol": "sACN",
+        "Universe": 1
+      },
+      "SourceB": {
+        "Protocol": "artnet",
+        "Universe": 0
+      },
+      "SourceC": {
+        "Protocol": "artnet",
+        "Universe": 0
+      },
+      "Destination": {
+        "Protocol": "dmx",
+        "Universe": 0
+      },
+      "SourceSelect": 0,
+      "SumType": 0,
+      "Frequency": 0,
+      "Recordable": false,
+      "Timeouted": false,
+      "RdmEnabled": false,
+      "SumBFrom": 0,
+      "SumBTo": 255,
+      "SumCFrom": 256,
+      "SumCTo": 511
+    },
+    {
+      "Local": 2,
+      "SourceA": {
+        "Protocol": "sACN",
+        "Universe": 2
+      },
+      "SourceB": {
+        "Protocol": "artnet",
+        "Universe": 1
+      },
+      "SourceC": {
+        "Protocol": "artnet",
+        "Universe": 1
+      },
+      "Destination": {
+        "Protocol": "dmx",
+        "Universe": 1
+      },
+      "SourceSelect": 0,
+      "SumType": 0,
+      "Frequency": 0,
+      "Recordable": false,
+      "Timeouted": false,
+      "RdmEnabled": false,
+      "SumBFrom": 0,
+      "SumBTo": 255,
+      "SumCFrom": 256,
+      "SumCTo": 511
+    },
+    {
+      "Local": 3,
+      "SourceA": {
+        "Protocol": "sACN",
+        "Universe": 3
+      },
+      "SourceB": {
+        "Protocol": "artnet",
+        "Universe": 2
+      },
+      "SourceC": {
+        "Protocol": "artnet",
+        "Universe": 2
+      },
+      "Destination": {
+        "Protocol": "dmx",
+        "Universe": 2
+      },
+      "SourceSelect": 0,
+      "SumType": 0,
+      "Frequency": 0,
+      "Recordable": false,
+      "Timeouted": false,
+      "RdmEnabled": false,
+      "SumBFrom": 0,
+      "SumBTo": 255,
+      "SumCFrom": 256,
+      "SumCTo": 511
+    },
+    {
+      "Local": 4,
+      "SourceA": {
+        "Protocol": "sACN",
+        "Universe": 4
+      },
+      "SourceB": {
+        "Protocol": "artnet",
+        "Universe": 3
+      },
+      "SourceC": {
+        "Protocol": "artnet",
+        "Universe": 3
+      },
+      "Destination": {
+        "Protocol": "dmx",
+        "Universe": 3
+      },
+      "SourceSelect": 0,
+      "SumType": 0,
+      "Frequency": 0,
+      "Recordable": false,
+      "Timeouted": false,
+      "RdmEnabled": false,
+      "SumBFrom": 0,
+      "SumBTo": 255,
+      "SumCFrom": 256,
+      "SumCTo": 511
+    }
+  ],
+  "Channels": [
+    {
+      "Local": 1,
+      "Name": "Линия 1",
+      "Index": 1
+    },
+    {
+      "Local": 2,
+      "Name": "Линия 2",
+      "Index": 2
+    },
+    {
+      "Local": 3,
+      "Name": "Линия 3",
+      "Index": 3
+    },
+    {
+      "Local": 4,
+      "Name": "Линия 4",
+      "Index": 4
+    },
+    {
+      "Local": 5,
+      "Name": "Линия 5",
+      "Index": 5
+    },
+    {
+      "Local": 6,
+      "Name": "Линия 6",
+      "Index": 6
+    },
+    {
+      "Local": 7,
+      "Name": "Линия 7",
+      "Index": 7
+    },
+    {
+      "Local": 8,
+      "Name": "Линия 8",
+      "Index": 8
+    },
+    {
+      "Local": 9,
+      "Name": "Линия 9",
+      "Index": 9
+    },
+    {
+      "Local": 10,
+      "Name": "Линия 10",
+      "Index": 10
+    },
+    {
+      "Local": 11,
+      "Name": "Линия 11",
+      "Index": 11
+    },
+    {
+      "Local": 12,
+      "Name": "Линия 12",
+      "Index": 12
+    },
+    {
+      "Local": 13,
+      "Name": "Линия 13",
+      "Index": 13
+    },
+    {
+      "Local": 14,
+      "Name": "Линия 14",
+      "Index": 14
+    },
+    {
+      "Local": 15,
+      "Name": "Линия 15",
+      "Index": 15
+    },
+    {
+      "Local": 16,
+      "Name": "Линия 16",
+      "Index": 16
+    },
+    {
+      "Local": 17,
+      "Name": "Линия 17",
+      "Index": 17
+    },
+    {
+      "Local": 18,
+      "Name": "Линия 18",
+      "Index": 18
+    },
+    {
+      "Local": 19,
+      "Name": "Линия 19",
+      "Index": 19
+    },
+    {
+      "Local": 20,
+      "Name": "Линия 20",
+      "Index": 20
+    }
+  ],
+  "Pictures": [
+    {
+      "Local": 1,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 2,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 3,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 4,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 5,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 6,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 7,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 8,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 9,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 10,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 11,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 12,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 13,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 14,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 15,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 16,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 17,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 18,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 19,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 20,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 21,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 22,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 23,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 24,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 25,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 26,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 27,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 28,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 29,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 30,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 31,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 32,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 33,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 34,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 35,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 36,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 37,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 38,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 39,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 40,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 41,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 42,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 43,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 44,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 45,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 46,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 47,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    },
+    {
+      "Local": 48,
+      "Picture": 0,
+      "FadeIn": 0,
+      "FadeOut": 0,
+      "Mux1": 0,
+      "Mux2": 0,
+      "Mux3": 0,
+      "Mux4": 0
+    }
+  ]
+}
