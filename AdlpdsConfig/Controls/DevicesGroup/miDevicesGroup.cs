@@ -1,9 +1,11 @@
 ﻿using AdlpdsConfig.Controls.Devices;
+using AdlpdsConfig.Controls.Devices.NetGate;
 using AdlpdsConfig.Utils;
 using AdlpLib.Configuration.Application;
 using AdlpLib.LiveConfig;
 using AdlpLib.Models.Devices;
 using AdlpLib.Models.Devices.Exec;
+using AdlpLib.Models.Devices.NetGate;
 using AdlpLib.Models.Devices.PU;
 using AdlpLib.Models.DevicesGroup;
 using System;
@@ -280,53 +282,66 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                     return;
                 }
 
-                using(var editDlg = new EditDeviceParametersForm(newDevice))
+                bool editOk;
+                switch(newDevice)
                 {
-                    if(editDlg.ShowDialog(this) != DialogResult.OK)
-                        return;
-
-                    try
-                    {
-                        DeviceConfigDtoBase editedDevice = editDlg.CurrentDevice;
-
-                        CreateDeviceButton.Enabled = false;
-                        UseWaitCursor = true;
-
-                        long deviceId = await _devicesRepository.SaveAsync(newDevice);
-                        newDevice.Id = deviceId;
-
-                        DevicesGroupDto groupDto = await _groupRepository.LoadAsync(SelectedGroup.Id);
-                        if(groupDto == null)
+                    case NetGateConfigDto ng:
+                        using(var editNgDlg = new EditNetGateParametersForm(ng))
                         {
-                            CenteredMessageBox.Show(this, "Группа не найдена в БД.", "Ошибка",
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            return;
+                            editOk = editNgDlg.ShowDialog(this) == DialogResult.OK;
                         }
+                        break;
 
-                        if(!groupDto.DeviceIds.Contains(deviceId))
+                    default:
+                        using(var editDlg = new EditDeviceParametersForm(newDevice))
                         {
-                            groupDto.DeviceIds.Add(deviceId);
+                            editOk = editDlg.ShowDialog(this) == DialogResult.OK;
                         }
+                        break;
+                }
 
-                        await _groupRepository.SaveAsync(groupDto);
+                if(!editOk)
+                    return;
 
-                        await ReorderAllDevicesAsync();
+                try
+                {
+                    CreateDeviceButton.Enabled = false;
+                    UseWaitCursor = true;
 
-                        await ReloadAsync(SelectedGroup.Id);
+                    long deviceId = await _devicesRepository.SaveAsync(newDevice);
+                    newDevice.Id = deviceId;
 
-                        CenteredMessageBox.Show(this, "Устройство успешно добавлено и прикреплено к группе.",
-                            "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                    catch(Exception ex)
+                    DevicesGroupDto groupDto = await _groupRepository.LoadAsync(SelectedGroup.Id);
+                    if(groupDto == null)
                     {
-                        CenteredMessageBox.Show(this, $"Ошибка при сохранении: {ex.Message}", "Ошибка",
+                        CenteredMessageBox.Show(this, "Группа не найдена в БД.", "Ошибка",
                             MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
                     }
-                    finally
+
+                    if(!groupDto.DeviceIds.Contains(deviceId))
                     {
-                        CreateDeviceButton.Enabled = true;
-                        UseWaitCursor = false;
+                        groupDto.DeviceIds.Add(deviceId);
                     }
+
+                    await _groupRepository.SaveAsync(groupDto);
+
+                    await ReorderAllDevicesAsync();
+
+                    await ReloadAsync(SelectedGroup.Id);
+
+                    CenteredMessageBox.Show(this, "Устройство успешно добавлено и прикреплено к группе.",
+                        "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch(Exception ex)
+                {
+                    CenteredMessageBox.Show(this, $"Ошибка при сохранении: {ex.Message}", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+                    CreateDeviceButton.Enabled = true;
+                    UseWaitCursor = false;
                 }
             }
         }
@@ -505,44 +520,6 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                     ? fileName
                     : (!string.IsNullOrWhiteSpace(device.Mac) ? device.Mac : "Device");
             }
-
-            // Тип устройства — из имени файла (формат: Config_XXX_...)
-            if(string.IsNullOrWhiteSpace(device.DeviceType))
-            {
-                string detected = TryExtractDeviceType(fileName);
-
-                if(!string.IsNullOrWhiteSpace(detected))
-                {
-                    device.DeviceType = detected;
-                }
-                else
-                {
-                    // Fallback по фактическому типу DTO
-                    device.DeviceType = device switch
-                    {
-                        PuConfigDto => "PU",
-                        ExecConfigDto => "IKB",
-                        _ => "Unknown"
-                    };
-                }
-            }
-        }
-
-        /// <summary>
-        /// Извлекает тип устройства из имени файла: Config_IKB_20261007_121424 → IKB.
-        /// </summary>
-        private static string TryExtractDeviceType(string fileName)
-        {
-            if(string.IsNullOrWhiteSpace(fileName)) return null;
-
-            var parts = fileName.Split('_', StringSplitOptions.RemoveEmptyEntries);
-            // Ожидаем формат Config_<TYPE>_<...>
-            if(parts.Length >= 2 &&
-                parts[0].Equals("Config", StringComparison.OrdinalIgnoreCase))
-            {
-                return parts[1];
-            }
-            return null;
         }
 
         /// <summary>

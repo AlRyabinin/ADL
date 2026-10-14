@@ -1,4 +1,5 @@
 ﻿using AdlpLib.Models.Devices.Exec;
+using AdlpLib.Models.Devices.NetGate;
 using AdlpLib.Models.Devices.PU;
 using System.Text.Json.Serialization;
 
@@ -7,18 +8,28 @@ namespace AdlpLib.Models.Devices
     [JsonPolymorphic(TypeDiscriminatorPropertyName = "configType")]
     [JsonDerivedType(typeof(PuConfigDto), "PU")]
     [JsonDerivedType(typeof(ExecConfigDto), "EXEC")]
+    [JsonDerivedType(typeof(NetGateConfigDto), "NETGATE")]
     //дописывать новые
     public abstract class DeviceConfigDtoBase : IDeviceCommon
     {
         /// <summary>Идентификатор устройства в БД. Присваивается при сохранении.</summary>
-        [System.Text.Json.Serialization.JsonIgnore]
+        [JsonIgnore]
         public long Id { get; set; }
 
         [JsonPropertyOrder(1)]
         public string Name { get; set; }
 
+        [JsonIgnore]
+        public string DeviceType => GetType().Name switch
+        {
+            nameof(PuConfigDto) => "Pu",
+            nameof(ExecConfigDto) => "Exec",
+            nameof(NetGateConfigDto) => "NetGate",
+            _ => "unknown"
+        };
+
         [JsonPropertyOrder(2)]
-        public string DeviceType { get; set; }
+        public int SID { get; set; }
 
         [JsonPropertyOrder(3)]
         public string Mac { get; set; }

@@ -3,7 +3,6 @@
     public interface IDeviceCommon
     {
         string Name { get; set; }
-        string DeviceType { get; set; }
         string Mac { get; set; }
         string Ip { get; set; }
         string Mask { get; set; }

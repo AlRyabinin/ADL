@@ -1,5 +1,6 @@
 ﻿using AdlpLib.Models.Devices;
 using AdlpLib.Models.Devices.Exec;
+using AdlpLib.Models.Devices.NetGate;
 using AdlpLib.Models.Devices.PU;
 using System;
 using System.Collections.Generic;
@@ -24,9 +25,9 @@ namespace AdlpdsConfig.Controls.DevicesGroup
 
             DisplayText = device switch
             {
-                PuConfigDto => $"[PU]   [{type}] [{device.Block}] {name}{mac} {range}",
-                ExecConfigDto => $"[EXEC] [{type}] [{device.Block}] {name}{mac} {range}",
-                _ => $"[?]    [{type}] [{device.Block}] {name}{mac} {range}"
+                PuConfigDto => $"[{type}] {name}{mac} [{device.Block}] {range}",
+                ExecConfigDto => $"[{type}] {name}{mac} [{device.Block}] {range}",
+                _ => $"[{type}] {name}{mac} [{device.Block}] {range}"
             };
         }
 
@@ -54,6 +55,13 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                         .ToList() ?? new List<int>();
                     break;
 
+                case NetGateConfigDto ng:
+                    indices = ng.Channels?
+                        .Select(c => c.Index)
+                        .Where(i => i > 0)
+                        .ToList() ?? new List<int>();
+                    break;
+
                 default:
                     return "-";
             }
@@ -64,9 +72,10 @@ namespace AdlpdsConfig.Controls.DevicesGroup
             int min = indices.Min();
             int max = indices.Max();
 
-            return min == max
-                ? $"| каналы {min}"
-                : $"| каналы. {min}–{max}";
+            if(min == max)
+                return $"Канал {min}";
+
+            return $"Каналы {min}-{max}";
         }
 
         public override string ToString() => DisplayText;

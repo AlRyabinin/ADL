@@ -2,6 +2,7 @@
 using AdlpLib.LiveConfig;
 using AdlpLib.Models.Devices;
 using AdlpLib.Models.Devices.Exec;
+using AdlpLib.Models.Devices.NetGate;
 using AdlpLib.Models.Devices.PU;
 using System;
 using System.Collections.Generic;
@@ -33,36 +34,50 @@ namespace AdlpdsConfig.Controls.Devices
             if(TypeComboBox.SelectedItem == null)
                 return;
 
-            CountComboBox.Items.Clear();
-            CountComboBox.SelectedIndex = -1;
-            CountComboBox.Text = string.Empty;
+            ChannelCountComboBox.Items.Clear();
+            ChannelCountComboBox.SelectedIndex = -1;
+            ChannelCountComboBox.Text = string.Empty;
+
+            ConveyorCountComboBox.Items.Clear();
+            ConveyorCountComboBox.SelectedIndex = -1;
+            ConveyorCountComboBox.Text = string.Empty;
+
+            label3.Visible = false;
+            ConveyorCountComboBox.Visible = false;
 
             SelectedType = TypeComboBox.SelectedItem.ToString();
 
             switch(SelectedType)
             {
                 case "IKB":
-                    CountComboBox.Items.AddRange(new object[] { "24" });
+                    ChannelCountComboBox.Items.AddRange(new object[] { "24" });
                     break;
 
                 case "DIM220":
-                    CountComboBox.Items.AddRange(new object[] { "6", "12", "24" });
+                    ChannelCountComboBox.Items.AddRange(new object[] { "6", "12", "24" });
                     break;
 
                 case "Dimmer cabinet":
-                    CountComboBox.Items.AddRange(new object[] { "48", "96" });
+                    ChannelCountComboBox.Items.AddRange(new object[] { "48", "96" });
                     break;
 
                 case "NetGate":
-                    CountComboBox.Items.AddRange(new object[] { "12", "24", "48" });
+                    ChannelCountComboBox.Items.AddRange(new object[] { "12", "24", "48" });
+
+                    label3.Visible = true;
+                    ConveyorCountComboBox.Visible = true;
+                    ConveyorCountComboBox.Items.AddRange(new object[] { "4", "8" });
                     break;
 
                 default:
-                    CountComboBox.Items.AddRange(new object[] { "Нет данных" });
+                    ChannelCountComboBox.Items.AddRange(new object[] { "Нет данных" });
                     break;
             }
 
-            CountComboBox.SelectedIndex = 0;
+            ChannelCountComboBox.SelectedIndex = 0;
+
+            if(ConveyorCountComboBox.Visible)
+                ConveyorCountComboBox.SelectedIndex = 0;
         }
 
         private void SaveButton_Click(object sender, EventArgs e)
@@ -73,30 +88,46 @@ namespace AdlpdsConfig.Controls.Devices
                 return;
             }
 
-            if(CountComboBox.SelectedItem == null)
+            SelectedType = TypeComboBox.SelectedItem.ToString();
+
+            if(ChannelCountComboBox.SelectedItem == null)
             {
                 MessageBox.Show("Пожалуйста, выберите количество каналов.", "Внимание", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            SelectedType = TypeComboBox.SelectedItem.ToString();
-
-            if(!int.TryParse(CountComboBox.SelectedItem.ToString(), out int channelCount))
+            if(!int.TryParse(ChannelCountComboBox.SelectedItem.ToString(), out int channelCount))
             {
                 MessageBox.Show("Некорректное количество каналов.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
+            int conveyorCount = 0;
+            if(ConveyorCountComboBox.Visible)
+            {
+                if(!int.TryParse(ConveyorCountComboBox.SelectedItem.ToString(), out int cbConveyorCount))
+                {
+                    MessageBox.Show("Некорректное количество конвейеров.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                if(ConveyorCountComboBox.SelectedItem == null)
+                {
+                    MessageBox.Show("Пожалуйста, выберите количество конвейеров.", "Внимание", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                conveyorCount = cbConveyorCount;
+            }
+            
             switch(SelectedType)
             {
                 case "IKB":
-                case "NetGate":
                 case "DIM220":
                 case "Dimmer cabinet":
                 {
                     var exec = new ExecConfigDto
                     {
-                        DeviceType = SelectedType,
                         Channels = new List<LiveChannelCfg>(channelCount)
                     };
 
@@ -121,6 +152,51 @@ namespace AdlpdsConfig.Controls.Devices
                     CreatedDevice = exec;
                     break;
                 }
+                case "NetGate":
+                    {
+                        var netGate = new NetGateConfigDto
+                        {
+                            ConveyorCount = conveyorCount,
+                            Conveyors = new List<NetGateConveyorCfg>(conveyorCount),
+                            Channels = new List<NetGateChannelCfg>(channelCount),
+                            Pictures = new List<NetGatePictureCfg>()
+                        };
+
+                        for(int i = 1; i <= conveyorCount; i++)
+                        {
+                            netGate.Conveyors.Add(new NetGateConveyorCfg
+                            {
+                                Local = i,
+                                SourceA = new NetGateSourceCfg { Protocol = "sACN", Universe = i },
+                                SourceB = new NetGateSourceCfg { Protocol = "artnet", Universe = i - 1 },
+                                SourceC = new NetGateSourceCfg { Protocol = "artnet", Universe = i - 1 },
+                                Destination = new NetGateSourceCfg { Protocol = "dmx", Universe = i - 1 },
+                                SourceSelect = 0,
+                                SumType = 0,
+                                Frequency = 0,
+                                Recordable = false,
+                                Timeouted = false,
+                                RdmEnabled = false,
+                                SumBFrom = 0,
+                                SumBTo = 255,
+                                SumCFrom = 256,
+                                SumCTo = 511
+                            });
+                        }
+
+                        for(int i = 1; i <= channelCount; i++)
+                        {
+                            netGate.Channels.Add(new NetGateChannelCfg
+                            {
+                                Local = i,
+                                Name = $"Канал {i}",
+                                Index = i
+                            });
+                        }
+
+                        CreatedDevice = netGate;
+                        break;
+                    }
 
                 default:
                     MessageBox.Show("Неизвестный тип устройства.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);

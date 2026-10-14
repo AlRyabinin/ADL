@@ -2,291 +2,257 @@
   "GroupName": "Первая группа",
   "Devices": [
     {
-      "configType": "PU",
-      "Name": "Первое устройство",
-      "DeviceType": "IKB",
-      "Mac": "11:11:11:11:11:11",
+      "configType": "NETGATE",
+      "Name": "Гейт первый",
+      "DeviceType": "NetGate",
+      "SID": 10,
+      "Mac": "12:34:56:78:90:00",
       "Ip": "1.1.1.1",
       "Mask": "255.255.255.0",
       "Gateway": "",
       "Block": 1,
-      "Priority": 5,
-      "PictureSwitchTime": 0,
-      "PageCount": 1,
-      "SwapX": 0,
-      "SwapY": 0,
-      "Brightness": 100,
-      "BrightnessSleep": 100,
-      "SleepTimeout": 0,
+      "ConveyorCount": 4,
+      "Conveyors": [
+        {
+          "Local": 1,
+          "SourceA": {
+            "Protocol": "sACN",
+            "Universe": 1
+          },
+          "SourceB": {
+            "Protocol": "artnet",
+            "Universe": 1
+          },
+          "SourceC": {
+            "Protocol": "artnet",
+            "Universe": 1
+          },
+          "Destination": {
+            "Protocol": "dmx",
+            "Universe": 0
+          },
+          "SourceSelect": 0,
+          "SumType": 0,
+          "Frequency": 0,
+          "Recordable": false,
+          "Timeouted": false,
+          "RdmEnabled": false,
+          "SumBFrom": 0,
+          "SumBTo": 255,
+          "SumCFrom": 256,
+          "SumCTo": 511
+        },
+        {
+          "Local": 2,
+          "SourceA": {
+            "Protocol": "sACN",
+            "Universe": 2
+          },
+          "SourceB": {
+            "Protocol": "artnet",
+            "Universe": 1
+          },
+          "SourceC": {
+            "Protocol": "artnet",
+            "Universe": 1
+          },
+          "Destination": {
+            "Protocol": "dmx",
+            "Universe": 1
+          },
+          "SourceSelect": 0,
+          "SumType": 0,
+          "Frequency": 0,
+          "Recordable": false,
+          "Timeouted": false,
+          "RdmEnabled": false,
+          "SumBFrom": 0,
+          "SumBTo": 255,
+          "SumCFrom": 256,
+          "SumCTo": 511
+        },
+        {
+          "Local": 3,
+          "SourceA": {
+            "Protocol": "sACN",
+            "Universe": 3
+          },
+          "SourceB": {
+            "Protocol": "artnet",
+            "Universe": 2
+          },
+          "SourceC": {
+            "Protocol": "artnet",
+            "Universe": 2
+          },
+          "Destination": {
+            "Protocol": "dmx",
+            "Universe": 2
+          },
+          "SourceSelect": 0,
+          "SumType": 0,
+          "Frequency": 0,
+          "Recordable": false,
+          "Timeouted": false,
+          "RdmEnabled": false,
+          "SumBFrom": 0,
+          "SumBTo": 255,
+          "SumCFrom": 256,
+          "SumCTo": 511
+        },
+        {
+          "Local": 4,
+          "SourceA": {
+            "Protocol": "sACN",
+            "Universe": 4
+          },
+          "SourceB": {
+            "Protocol": "artnet",
+            "Universe": 3
+          },
+          "SourceC": {
+            "Protocol": "artnet",
+            "Universe": 3
+          },
+          "Destination": {
+            "Protocol": "dmx",
+            "Universe": 3
+          },
+          "SourceSelect": 0,
+          "SumType": 0,
+          "Frequency": 0,
+          "Recordable": false,
+          "Timeouted": false,
+          "RdmEnabled": false,
+          "SumBFrom": 0,
+          "SumBTo": 255,
+          "SumCFrom": 256,
+          "SumCTo": 511
+        }
+      ],
       "Channels": [
         {
           "Local": 1,
           "Name": "Канал 1",
-          "Index": 1,
-          "Type": 1
+          "Index": 1
         },
         {
           "Local": 2,
           "Name": "Канал 2",
-          "Index": 2,
-          "Type": 1
+          "Index": 2
         },
         {
           "Local": 3,
           "Name": "Канал 3",
-          "Index": 3,
-          "Type": 1
+          "Index": 3
         },
         {
           "Local": 4,
           "Name": "Канал 4",
-          "Index": 4,
-          "Type": 1
+          "Index": 4
         },
         {
           "Local": 5,
           "Name": "Канал 5",
-          "Index": 5,
-          "Type": 1
+          "Index": 5
         },
         {
           "Local": 6,
           "Name": "Канал 6",
-          "Index": 6,
-          "Type": 1
+          "Index": 6
         },
         {
           "Local": 7,
           "Name": "Канал 7",
-          "Index": 7,
-          "Type": 1
+          "Index": 7
         },
         {
           "Local": 8,
           "Name": "Канал 8",
-          "Index": 8,
-          "Type": 1
+          "Index": 8
         },
         {
           "Local": 9,
           "Name": "Канал 9",
-          "Index": 9,
-          "Type": 1
+          "Index": 9
         },
         {
           "Local": 10,
           "Name": "Канал 10",
-          "Index": 10,
-          "Type": 1
+          "Index": 10
         },
         {
           "Local": 11,
           "Name": "Канал 11",
-          "Index": 11,
-          "Type": 1
+          "Index": 11
         },
         {
           "Local": 12,
           "Name": "Канал 12",
-          "Index": 12,
-          "Type": 1
+          "Index": 12
         },
         {
           "Local": 13,
           "Name": "Канал 13",
-          "Index": 13,
-          "Type": 1
+          "Index": 13
         },
         {
           "Local": 14,
           "Name": "Канал 14",
-          "Index": 14,
-          "Type": 1
+          "Index": 14
         },
         {
           "Local": 15,
           "Name": "Канал 15",
-          "Index": 15,
-          "Type": 1
+          "Index": 15
         },
         {
           "Local": 16,
           "Name": "Канал 16",
-          "Index": 16,
-          "Type": 1
+          "Index": 16
         },
         {
           "Local": 17,
           "Name": "Канал 17",
-          "Index": 17,
-          "Type": 1
+          "Index": 17
         },
         {
           "Local": 18,
           "Name": "Канал 18",
-          "Index": 18,
-          "Type": 1
+          "Index": 18
         },
         {
           "Local": 19,
           "Name": "Канал 19",
-          "Index": 19,
-          "Type": 1
+          "Index": 19
         },
         {
           "Local": 20,
           "Name": "Канал 20",
-          "Index": 20,
-          "Type": 1
+          "Index": 20
         },
         {
           "Local": 21,
           "Name": "Канал 21",
-          "Index": 21,
-          "Type": 1
+          "Index": 21
         },
         {
           "Local": 22,
           "Name": "Канал 22",
-          "Index": 22,
-          "Type": 1
+          "Index": 22
         },
         {
           "Local": 23,
           "Name": "Канал 23",
-          "Index": 23,
-          "Type": 1
+          "Index": 23
         },
         {
           "Local": 24,
           "Name": "Канал 24",
-          "Index": 24,
-          "Type": 1
+          "Index": 24
         }
       ],
-      "Groups": [],
-      "Pictures": [],
-      "Buttons": [
-        {
-          "Local": 0,
-          "Page": 12,
-          "LocalChannel": 0,
-          "PosX": 0,
-          "PosY": 0,
-          "Icon": 0,
-          "Color": 0
-        },
-        {
-          "Local": 0,
-          "Page": 13,
-          "LocalChannel": 0,
-          "PosX": 0,
-          "PosY": 0,
-          "Icon": 0,
-          "Color": 0
-        },
-        {
-          "Local": 0,
-          "Page": 14,
-          "LocalChannel": 0,
-          "PosX": 0,
-          "PosY": 0,
-          "Icon": 0,
-          "Color": 0
-        }
-      ]
-    },
-    {
-      "configType": "EXEC",
-      "Name": "Второе",
-      "DeviceType": "DIM220",
-      "Mac": "22:22:22:22:22:22",
-      "Ip": "2.2.2.2",
-      "Mask": "255.255.255.255",
-      "Gateway": "",
-      "Block": 3,
-      "BaseChannel": "49",
-      "Channels": [
-        {
-          "Local": 1,
-          "GlobalIndex": 49,
-          "Name": "Канал 49",
-          "Control": "adlp",
-          "Wide": true,
-          "StreamId": 0,
-          "Patch": 0,
-          "Preheat": 0,
-          "Limit": 100,
-          "Curve": 0,
-          "SwitchDelay": 0
-        },
-        {
-          "Local": 2,
-          "GlobalIndex": 50,
-          "Name": "Канал 50",
-          "Control": "adlp",
-          "Wide": true,
-          "StreamId": 0,
-          "Patch": 0,
-          "Preheat": 0,
-          "Limit": 100,
-          "Curve": 0,
-          "SwitchDelay": 0
-        },
-        {
-          "Local": 3,
-          "GlobalIndex": 51,
-          "Name": "Канал 51",
-          "Control": "adlp",
-          "Wide": true,
-          "StreamId": 0,
-          "Patch": 0,
-          "Preheat": 0,
-          "Limit": 100,
-          "Curve": 0,
-          "SwitchDelay": 0
-        },
-        {
-          "Local": 4,
-          "GlobalIndex": 52,
-          "Name": "Канал 52",
-          "Control": "adlp",
-          "Wide": true,
-          "StreamId": 0,
-          "Patch": 0,
-          "Preheat": 0,
-          "Limit": 100,
-          "Curve": 0,
-          "SwitchDelay": 0
-        },
-        {
-          "Local": 5,
-          "GlobalIndex": 53,
-          "Name": "Канал 53",
-          "Control": "adlp",
-          "Wide": true,
-          "StreamId": 0,
-          "Patch": 0,
-          "Preheat": 0,
-          "Limit": 100,
-          "Curve": 0,
-          "SwitchDelay": 0
-        },
-        {
-          "Local": 6,
-          "GlobalIndex": 54,
-          "Name": "Канал 54",
-          "Control": "adlp",
-          "Wide": true,
-          "StreamId": 0,
-          "Patch": 0,
-          "Preheat": 0,
-          "Limit": 100,
-          "Curve": 0,
-          "SwitchDelay": 0
-        }
-      ],
-      "Streams": []
+      "Pictures": []
     }
   ]
 }
