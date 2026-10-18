@@ -44,7 +44,7 @@ namespace AdlpdsConfig.Controls
             InitializeComponent();
         }
 
-        public void LoadFromConfig(PuConfigDto cfg)
+        public void LoadFromConfig(PuColorConfigDto cfg)
         {
             _loadedFromConfig = true;
 
@@ -578,7 +578,7 @@ namespace AdlpdsConfig.Controls
 
         private DeviceConfigDtoBase BuildResult() => CurrentDevice.Name switch
         {
-            "PU" => new PuConfigDto
+            "PU" => new PuColorConfigDto
             {
                 Mac = MacValue.Text,
                 Ip = tbIp.Text,

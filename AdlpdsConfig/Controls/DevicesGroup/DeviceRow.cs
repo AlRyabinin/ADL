@@ -25,7 +25,7 @@ namespace AdlpdsConfig.Controls.DevicesGroup
 
             DisplayText = device switch
             {
-                PuConfigDto => $"[{type}] {name}{mac} [{device.Block}] {range}",
+                PuColorConfigDto => $"[{type}] {name}{mac} [{device.Block}] {range}",
                 ExecConfigDto => $"[{type}] {name}{mac} [{device.Block}] {range}",
                 _ => $"[{type}] {name}{mac} [{device.Block}] {range}"
             };
@@ -41,7 +41,7 @@ namespace AdlpdsConfig.Controls.DevicesGroup
 
             switch(device)
             {
-                case PuConfigDto pu:
+                case PuColorConfigDto pu:
                     indices = pu.Channels?
                         .Select(c => c.Index)
                         .Where(i => i > 0)

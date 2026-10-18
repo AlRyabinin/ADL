@@ -6,7 +6,9 @@ using System.Text.Json.Serialization;
 namespace AdlpLib.Models.Devices
 {
     [JsonPolymorphic(TypeDiscriminatorPropertyName = "configType")]
-    [JsonDerivedType(typeof(PuConfigDto), "PU")]
+    [JsonDerivedType(typeof(Pu6ConfigDto), "PU 6")]
+    [JsonDerivedType(typeof(PuBWConfigDto), "PU black-and-white")]
+    [JsonDerivedType(typeof(PuColorConfigDto), "PU color")]
     [JsonDerivedType(typeof(ExecConfigDto), "EXEC")]
     [JsonDerivedType(typeof(NetGateConfigDto), "NETGATE")]
     //дописывать новые
@@ -22,7 +24,9 @@ namespace AdlpLib.Models.Devices
         [JsonIgnore]
         public string DeviceType => GetType().Name switch
         {
-            nameof(PuConfigDto) => "Pu",
+            nameof(Pu6ConfigDto) => "Pu 6",
+            nameof(PuBWConfigDto) => "Pu black-and-white",
+            nameof(PuColorConfigDto) => "Pu color",
             nameof(ExecConfigDto) => "Exec",
             nameof(NetGateConfigDto) => "NetGate",
             _ => "unknown"

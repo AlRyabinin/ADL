@@ -38,7 +38,9 @@ namespace AdlpLib.Configuration.Application
     /// </summary>
     public class DeviceConfigRepository
     {
-        private const string TypePu = "PU";
+        private const string TypePu6 = "PU6";
+        private const string TypePuBW = "PUBW";
+        private const string TypePu = "PU";   // legacy = PuColorConfigDto
         private const string TypeExec = "EXEC";
         private const string TypeNetGate = "NETGATE";
 
@@ -235,25 +237,27 @@ namespace AdlpLib.Configuration.Application
             {
                 string configType = dto switch
                 {
-                    PuConfigDto => TypePu,
+                    Pu6ConfigDto => TypePu6,
+                    PuBWConfigDto => TypePuBW,
+                    PuColorConfigDto => TypePu,
                     ExecConfigDto => TypeExec,
                     NetGateConfigDto => TypeNetGate,
                     _ => throw new NotSupportedException($"Тип {dto.GetType().Name} не поддержан.")
                 };
 
-                long deviceId = await UpsertDeviceAsync(conn, tx, dto, configType, ct).ConfigureAwait(false);
-                await DeleteDependentsAsync(conn, tx, deviceId, ct).ConfigureAwait(false);
+                long deviceId = await UpsertDeviceAsync(conn, tx, dto, configType, ct);
+                await DeleteDependentsAsync(conn, tx, deviceId, ct);
 
                 switch(dto)
                 {
-                    case PuConfigDto pu:
-                        await SavePuDependentsAsync(conn, tx, deviceId, pu, ct).ConfigureAwait(false);
+                    case PuConfigDtoBase pu:               
+                        await SavePuDependentsAsync(conn, tx, deviceId, pu, ct);
                         break;
                     case ExecConfigDto exec:
-                        await SaveExecDependentsAsync(conn, tx, deviceId, exec, ct).ConfigureAwait(false);
+                        await SaveExecDependentsAsync(conn, tx, deviceId, exec, ct);
                         break;
                     case NetGateConfigDto ng:
-                        await SaveNetGateDependentsAsync(conn, tx, deviceId, ng, ct).ConfigureAwait(false);
+                        await SaveNetGateDependentsAsync(conn, tx, deviceId, ng, ct);
                         break;
                 }
 
@@ -314,7 +318,7 @@ namespace AdlpLib.Configuration.Application
         // ---------- PU ----------
 
         private async Task SavePuDependentsAsync(DbConnection conn, DbTransaction tx,
-                                                  long deviceId, PuConfigDto pu,
+                                                  long deviceId, PuConfigDtoBase pu,
                                                   CancellationToken ct)
         {
             await ExecAsync(conn, tx,
@@ -667,9 +671,11 @@ namespace AdlpLib.Configuration.Application
 
             return configType switch
             {
-                TypePu => await LoadPuAsync(conn, deviceId, ct).ConfigureAwait(false),
-                TypeExec => await LoadExecAsync(conn, deviceId, ct).ConfigureAwait(false),
-                TypeNetGate => await LoadNetGateAsync(conn, deviceId, ct).ConfigureAwait(false),
+                TypePu6 => await LoadPuAsync<Pu6ConfigDto>(conn, deviceId, ct),
+                TypePuBW => await LoadPuAsync<PuBWConfigDto>(conn, deviceId, ct),
+                TypePu => await LoadPuAsync<PuColorConfigDto>(conn, deviceId, ct),
+                TypeExec => await LoadExecAsync(conn, deviceId, ct),
+                TypeNetGate => await LoadNetGateAsync(conn, deviceId, ct),
                 _ => throw new NotSupportedException($"Неизвестный ConfigType: '{configType}'.")
             };
         }
@@ -682,9 +688,10 @@ namespace AdlpLib.Configuration.Application
             return await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
         }
 
-        private async Task<PuConfigDto> LoadPuAsync(DbConnection conn, long deviceId, CancellationToken ct)
+        private async Task<TPu> LoadPuAsync<TPu>(DbConnection conn, long deviceId, CancellationToken ct)
+            where TPu : PuConfigDtoBase, new()
         {
-            var dto = new PuConfigDto { Id = deviceId };
+            var dto = new TPu { Id = deviceId };
 
             await using(var cmd = conn.CreateCommand())
             {
@@ -717,6 +724,7 @@ namespace AdlpLib.Configuration.Application
                     dto.SleepTimeout = GetInt32Safe(r, 14);
                 }
             }
+
             dto.Channels ??= new List<LiveControlChannelCfg>();
             dto.Groups ??= new List<LiveControlGroupCfg>();
             dto.Pictures ??= new List<LiveControlPictureCfg>();
@@ -1005,9 +1013,11 @@ namespace AdlpLib.Configuration.Application
         /// <summary>Строковый код типа для поля <c>Devices.ConfigType</c>.</summary>
         public static string ConfigTypeOf(DeviceConfigDtoBase dto) => dto switch
         {
-            PuConfigDto => "PU",
-            ExecConfigDto => "EXEC",
-            NetGateConfigDto => "NETGATE",
+            Pu6ConfigDto => TypePu6,
+            PuBWConfigDto => TypePuBW,
+            PuColorConfigDto => TypePu,
+            ExecConfigDto => TypeExec,
+            NetGateConfigDto => TypeNetGate,
             _ => throw new NotSupportedException($"Тип {dto.GetType().Name} не поддержан.")
         };
 

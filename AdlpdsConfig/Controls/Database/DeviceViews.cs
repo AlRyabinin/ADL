@@ -259,7 +259,7 @@ namespace AdlpdsConfig.Controls.Database
                     vm.ExecStreams = (exec.Streams ?? new()).Select(ExecStreamView.From).ToList();
                     break;
 
-                case PuConfigDto pu:
+                case PuColorConfigDto pu:
                     vm.Common.Add(new CommonFieldView { Field = "Priority", Value = pu.Priority.ToString() });
                     vm.Common.Add(new CommonFieldView { Field = "PictureSwitchTime", Value = pu.PictureSwitchTime.ToString() });
                     vm.Common.Add(new CommonFieldView { Field = "PageCount", Value = pu.PageCount.ToString() });

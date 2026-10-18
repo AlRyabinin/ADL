@@ -42,7 +42,7 @@
             // 
             TypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             TypeComboBox.FormattingEnabled = true;
-            TypeComboBox.Items.AddRange(new object[] { "IKB", "DIM220", "Dimmer cabinet", "NetGate" });
+            TypeComboBox.Items.AddRange(new object[] { "IKB", "DIM220", "Dimmer cabinet", "NetGate", "PU 6", "PU BW", "PU color" });
             TypeComboBox.Location = new Point(138, 6);
             TypeComboBox.Name = "TypeComboBox";
             TypeComboBox.Size = new Size(112, 23);

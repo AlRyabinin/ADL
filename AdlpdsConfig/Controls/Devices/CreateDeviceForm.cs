@@ -69,6 +69,18 @@ namespace AdlpdsConfig.Controls.Devices
                     ConveyorCountComboBox.Items.AddRange(new object[] { "4", "8" });
                     break;
 
+                case "PU 6":
+                    ChannelCountComboBox.Items.AddRange(new object[] { "6" });
+                    break;
+
+                case "PU BW":
+                    ChannelCountComboBox.Items.AddRange(new object[] { "6", "12", "24" });
+                    break;
+
+                case "PU color":
+                    ChannelCountComboBox.Items.AddRange(new object[] { "12", "24", "48", "96" });
+                    break;
+
                 default:
                     ChannelCountComboBox.Items.AddRange(new object[] { "Нет данных" });
                     break;
@@ -153,50 +165,125 @@ namespace AdlpdsConfig.Controls.Devices
                     break;
                 }
                 case "NetGate":
+                {
+                    var netGate = new NetGateConfigDto
                     {
-                        var netGate = new NetGateConfigDto
-                        {
-                            ConveyorCount = conveyorCount,
-                            Conveyors = new List<NetGateConveyorCfg>(conveyorCount),
-                            Channels = new List<NetGateChannelCfg>(channelCount),
-                            Pictures = new List<NetGatePictureCfg>()
-                        };
+                        ConveyorCount = conveyorCount,
+                        Conveyors = new List<NetGateConveyorCfg>(conveyorCount),
+                        Channels = new List<NetGateChannelCfg>(channelCount),
+                        Pictures = new List<NetGatePictureCfg>()
+                    };
 
-                        for(int i = 1; i <= conveyorCount; i++)
+                    for(int i = 1; i <= conveyorCount; i++)
+                    {
+                        netGate.Conveyors.Add(new NetGateConveyorCfg
                         {
-                            netGate.Conveyors.Add(new NetGateConveyorCfg
-                            {
-                                Local = i,
-                                SourceA = new NetGateSourceCfg { Protocol = "sACN", Universe = i },
-                                SourceB = new NetGateSourceCfg { Protocol = "artnet", Universe = i - 1 },
-                                SourceC = new NetGateSourceCfg { Protocol = "artnet", Universe = i - 1 },
-                                Destination = new NetGateSourceCfg { Protocol = "dmx", Universe = i - 1 },
-                                SourceSelect = 0,
-                                SumType = 0,
-                                Frequency = 0,
-                                Recordable = false,
-                                Timeouted = false,
-                                RdmEnabled = false,
-                                SumBFrom = 0,
-                                SumBTo = 255,
-                                SumCFrom = 256,
-                                SumCTo = 511
-                            });
-                        }
-
-                        for(int i = 1; i <= channelCount; i++)
-                        {
-                            netGate.Channels.Add(new NetGateChannelCfg
-                            {
-                                Local = i,
-                                Name = $"Канал {i}",
-                                Index = i
-                            });
-                        }
-
-                        CreatedDevice = netGate;
-                        break;
+                            Local = i,
+                            SourceA = new NetGateSourceCfg { Protocol = "sACN", Universe = i },
+                            SourceB = new NetGateSourceCfg { Protocol = "artnet", Universe = i - 1 },
+                            SourceC = new NetGateSourceCfg { Protocol = "artnet", Universe = i - 1 },
+                            Destination = new NetGateSourceCfg { Protocol = "dmx", Universe = i - 1 },
+                            SourceSelect = 0,
+                            SumType = 0,
+                            Frequency = 0,
+                            Recordable = false,
+                            Timeouted = false,
+                            RdmEnabled = false,
+                            SumBFrom = 0,
+                            SumBTo = 255,
+                            SumCFrom = 256,
+                            SumCTo = 511
+                        });
                     }
+
+                    for(int i = 1; i <= channelCount; i++)
+                    {
+                        netGate.Channels.Add(new NetGateChannelCfg
+                        {
+                            Local = i,
+                            Name = $"Канал {i}",
+                            Index = i
+                        });
+                    }
+
+                    CreatedDevice = netGate;
+                    break;
+                }
+
+                case "PU 6":
+
+                    var pu6 = new Pu6ConfigDto
+                    {
+                        Groups = [],
+                        Channels = new List<LiveControlChannelCfg>(channelCount),
+                        Pictures = [],
+                        Buttons  = []
+                    };
+
+                    for(int i = 1; i <= channelCount; i++)
+                    {
+                        pu6.Channels.Add(new LiveControlChannelCfg
+                        {
+                            Local = i,
+                            Name = $"Канал {i}",
+                            Index = i,
+                            Type = 1 
+                        });
+                    }
+
+                    CreatedDevice = pu6;
+
+                    break;
+
+                case "PU BW":
+
+                    var puBW = new PuBWConfigDto
+                    {
+                        Groups = [],
+                        Channels = new List<LiveControlChannelCfg>(channelCount),
+                        Pictures = [],
+                        Buttons = []
+                    };
+
+                    for(int i = 1; i <= channelCount; i++)
+                    {
+                        puBW.Channels.Add(new LiveControlChannelCfg
+                        {
+                            Local = i,
+                            Name = $"Канал {i}",
+                            Index = i,
+                            Type = 1 
+                        });
+                    }
+
+                    CreatedDevice = puBW;
+
+                    break;
+
+                case "PU color":
+
+                    var puColor = new PuColorConfigDto
+                    {
+                        Groups = [],
+                        Channels = new List<LiveControlChannelCfg>(channelCount),
+                        Pictures = [],
+                        Buttons = []
+                    };
+
+                    for(int i = 1; i <= channelCount; i++)
+                    {
+                        puColor.Channels.Add(new LiveControlChannelCfg
+                        {
+                            Local = i,
+                            Name = $"Канал {i}",
+                            Index = i,
+                            Type = 1 
+                        });
+                    }
+
+                    CreatedDevice = puColor;
+
+                    break;
 
                 default:
                     MessageBox.Show("Неизвестный тип устройства.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);

@@ -292,6 +292,13 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                         }
                         break;
 
+                    case PuConfigDtoBase pu:
+                        using(var editDlg = new EditPuParametersForm(pu))
+                        {
+                            editOk = editDlg.ShowDialog(this) == DialogResult.OK;
+                        }
+                        break;
+
                     default:
                         using(var editDlg = new EditDeviceParametersForm(newDevice))
                         {
@@ -409,7 +416,6 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                 UseWaitCursor = true;
                 Enabled = false;
 
-                // Определяем, в какую группу складывать устройства
                 long targetGroupId;
                 var currentGroup = SelectedGroup;
 
@@ -419,7 +425,6 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                 }
                 else
                 {
-                    // Группы нет — создаём «Импорт»
                     const string importGroupName = "Импорт";
                     long? existing = await _groupRepository.FindGroupIdByNameAsync(importGroupName);
                     targetGroupId = existing ?? await _groupRepository.SaveAsync(
@@ -448,22 +453,18 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                             continue;
                         }
 
-                        // Заполняем обязательные поля из имени файла
                         NormalizeDevice(device, Path.GetFileNameWithoutExtension(fileName));
 
-                        // Открываем диалог редактирования ПЕРЕД сохранением в БД
                         using(var editDlg = new EditDeviceParametersForm(device))
                         {
                             if(editDlg.ShowDialog(this) != DialogResult.OK)
                             {
-                                // Пользователь отменил — пропускаем этот файл
                                 cancelled++;
                                 continue;
                             }
 
                             DeviceConfigDtoBase editedDevice = editDlg.CurrentDevice;
 
-                            // Id = 0, чтобы репозиторий создал новую запись
                             editedDevice.Id = 0;
                             long deviceId = await _devicesRepository.SaveAsync(editedDevice);
                             editedDevice.Id = deviceId;
@@ -484,7 +485,6 @@ namespace AdlpdsConfig.Controls.DevicesGroup
 
                 await _groupRepository.SaveAsync(groupDto);
 
-                // Пересчитываем блоки и каналы
                 await ReorderAllDevicesAsync();
                 await ReloadAsync(targetGroupId);
 
@@ -513,7 +513,6 @@ namespace AdlpdsConfig.Controls.DevicesGroup
         /// </summary>
         private void NormalizeDevice(DeviceConfigDtoBase device, string fileName)
         {
-            // Имя устройства — из имени файла, если не задано
             if(string.IsNullOrWhiteSpace(device.Name))
             {
                 device.Name = !string.IsNullOrWhiteSpace(fileName)
@@ -570,7 +569,7 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                         exec.BaseChannel = baseChannel.ToString();
                         break;
 
-                    case PuConfigDto pu:
+                    case PuColorConfigDto pu:
                         channelCount = pu.Channels?.Count ?? 0;
 
                         if(channelCount == 0)
@@ -593,6 +592,7 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                 block++;
             }
         }
+
         private async void EditButton_Click(object sender, EventArgs e)
         {
             var selectedGroup = SelectedGroup;
@@ -618,20 +618,49 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                     return;
                 }
 
-                using(var editDlg = new EditDeviceParametersForm(freshDevice))
+                bool editOk = false;
+
+                switch(freshDevice)
                 {
-                    if(editDlg.ShowDialog(this) != DialogResult.OK)
-                        return;
+                    case NetGateConfigDto ng:
+                        using(var editNgDlg = new EditNetGateParametersForm(ng))
+                        {
+                            editOk = editNgDlg.ShowDialog(this) == DialogResult.OK;
+                        }
+                        break;
 
-                    var edited = editDlg.CurrentDevice;
-                    await _devicesRepository.SaveAsync(edited);
+                    case PuConfigDtoBase pu:
+                        using(var editPuDlg = new EditPuParametersForm(pu))
+                        {
+                            editOk = editPuDlg.ShowDialog(this) == DialogResult.OK;
+                        }
+                        break;
 
-                    await ReorderAllDevicesAsync();
-                    await ReloadAsync(selectedGroup.Id);
+                    case ExecConfigDto exec:
+                        using(var editExecDlg = new EditDeviceParametersForm(exec))
+                        {
+                            editOk = editExecDlg.ShowDialog(this) == DialogResult.OK;
+                        }
+                        break;
 
-                    CenteredMessageBox.Show(this, "Изменения сохранены.", "Успех",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    default:
+                        using(var editDlg = new EditDeviceParametersForm(freshDevice))
+                        {
+                            editOk = editDlg.ShowDialog(this) == DialogResult.OK;
+                        }
+                        break;
                 }
+
+                if(!editOk)
+                    return;
+
+                await _devicesRepository.SaveAsync(freshDevice);
+
+                await ReorderAllDevicesAsync();
+                await ReloadAsync(selectedGroup.Id);
+
+                CenteredMessageBox.Show(this, "Изменения сохранены.", "Успех",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch(Exception ex)
             {

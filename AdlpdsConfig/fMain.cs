@@ -240,7 +240,7 @@ namespace AdlpdsConfig
 
             switch(cfg)
             {
-                case PuConfigDto pu: dlg.LoadFromConfig(pu); break;
+                case PuColorConfigDto pu: dlg.LoadFromConfig(pu); break;
                 case ExecConfigDto ex: dlg.LoadFromConfig(ex); break;
                 //Можно дописать новые
                 default:
@@ -276,7 +276,7 @@ namespace AdlpdsConfig
                         }
                         break;
 
-                    case PuConfigDto pu:
+                    case PuColorConfigDto pu:
                         var ctrlCfg = BuildPUConfig(pu);
                         Svc.SetNet(device, pu.Ip, pu.Mask, pu.Gateway);
                         bool sentCtrl = Svc.WriteControlConfig(device, ctrlCfg, (dev, ok) =>
@@ -311,7 +311,7 @@ namespace AdlpdsConfig
             return configuration;
         }
 
-        private LiveControlConfig BuildPUConfig(PuConfigDto cfg)
+        private LiveControlConfig BuildPUConfig(PuColorConfigDto cfg)
         {
             var configuration = new LiveControlConfig
             {

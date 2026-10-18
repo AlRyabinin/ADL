@@ -67,7 +67,7 @@ namespace AdlpdsConfig.Controls.Devices
 
             switch(CurrentDevice)
             {
-                case PuConfigDto pu:
+                case PuColorConfigDto pu:
                     // 1. Заполняем каналы
                     PuChannels = new BindingList<LiveControlChannelCfg>(
                         (pu.Channels ?? new List<LiveControlChannelCfg>()).OrderBy(c => c.Local).ToList());
@@ -320,7 +320,7 @@ namespace AdlpdsConfig.Controls.Devices
             CurrentDevice.Ip = IpTextBox.Text;
             CurrentDevice.Mask = MaskTextBox.Text;
 
-            if(CurrentDevice is PuConfigDto pu)
+            if(CurrentDevice is PuColorConfigDto pu)
             {
                 if(udPriority != null) pu.Priority = (int)udPriority.Value;
                 if(udPicSwitch != null) pu.PictureSwitchTime = (int)udPicSwitch.Value;

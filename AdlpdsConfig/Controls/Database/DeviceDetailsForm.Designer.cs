@@ -22,7 +22,7 @@ namespace AdlpdsConfig.Controls
             string typeCode = cfg switch
             {
                 ExecConfigDto => "EXEC",
-                PuConfigDto => "PU",
+                PuColorConfigDto => "PU",
                 _ => cfg.GetType().Name
             };
 

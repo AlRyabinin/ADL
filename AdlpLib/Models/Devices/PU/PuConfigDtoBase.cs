@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace AdlpLib.Models.Devices.PU
 {
-    public class PuConfigDto : DeviceConfigDtoBase
+    public class PuConfigDtoBase : DeviceConfigDtoBase
     {
         /// <summary>Приоритет устройства</summary>
         [JsonPropertyOrder(10)]
