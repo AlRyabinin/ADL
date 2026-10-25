@@ -17,7 +17,6 @@
 
         private void InitializeComponent()
         {
-            // --- Создание всех контролов ---
             NameTextBox = new TextBox();
             label1 = new Label();
             SaveButton = new Button();
@@ -28,24 +27,20 @@
             MaskTextBox = new TextBox();
             label3 = new Label();
             label4 = new Label();
-
             tabPagePictures = new TabPage();
             PicturesGrid = new DataGridView();
             tabPageChannels = new TabPage();
             ChannelsGrid = new DataGridView();
             tabPageConveyors = new TabPage();
             ConveyorsGrid = new DataGridView();
-
-            lblConveyorCount = new Label();
-            _cbConveyorCount = new ComboBox();
             btnConveyorProps = new Button();
-            // ↑↑↑
-
+            _cbConveyorCount = new ComboBox();
+            lblConveyorCount = new Label();
             tablesTab = new TabControl();
             label5 = new Label();
             _udSID = new NumericUpDown();
-
-            // Suspend
+            label6 = new Label();
+            textBox1 = new TextBox();
             tabPagePictures.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)PicturesGrid).BeginInit();
             tabPageChannels.SuspendLayout();
@@ -55,7 +50,6 @@
             tablesTab.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)_udSID).BeginInit();
             SuspendLayout();
-
             // 
             // NameTextBox
             // 
@@ -63,7 +57,6 @@
             NameTextBox.Name = "NameTextBox";
             NameTextBox.Size = new Size(236, 23);
             NameTextBox.TabIndex = 0;
-
             // 
             // label1
             // 
@@ -73,7 +66,6 @@
             label1.Size = new Size(62, 15);
             label1.TabIndex = 1;
             label1.Text = "Название:";
-
             // 
             // SaveButton
             // 
@@ -84,7 +76,6 @@
             SaveButton.Text = "Сохранить";
             SaveButton.UseVisualStyleBackColor = true;
             SaveButton.Click += SaveButton_Click;
-
             // 
             // CancelButton
             // 
@@ -95,7 +86,6 @@
             CancelButton.Text = "Отмена";
             CancelButton.UseVisualStyleBackColor = true;
             CancelButton.Click += CancelButton_Click;
-
             // 
             // MacTextBox
             // 
@@ -104,7 +94,6 @@
             MacTextBox.Size = new Size(236, 23);
             MacTextBox.TabIndex = 4;
             MacTextBox.Validating += MacTextBox_Validating;
-
             // 
             // IpTextBox
             // 
@@ -113,7 +102,6 @@
             IpTextBox.Size = new Size(236, 23);
             IpTextBox.TabIndex = 5;
             IpTextBox.Validating += IpTextBox_Validating;
-
             // 
             // label2
             // 
@@ -123,7 +111,6 @@
             label2.Size = new Size(33, 15);
             label2.TabIndex = 6;
             label2.Text = "Mac:";
-
             // 
             // MaskTextBox
             // 
@@ -132,7 +119,6 @@
             MaskTextBox.Size = new Size(236, 23);
             MaskTextBox.TabIndex = 7;
             MaskTextBox.Validating += MaskTextBox_Validating;
-
             // 
             // label3
             // 
@@ -142,7 +128,6 @@
             label3.Size = new Size(20, 15);
             label3.TabIndex = 8;
             label3.Text = "Ip:";
-
             // 
             // label4
             // 
@@ -152,10 +137,49 @@
             label4.Size = new Size(38, 15);
             label4.TabIndex = 9;
             label4.Text = "Mask:";
-
-            // =========================================================
+            // 
+            // tabPagePictures
+            // 
+            tabPagePictures.Controls.Add(PicturesGrid);
+            tabPagePictures.Location = new Point(4, 24);
+            tabPagePictures.Name = "tabPagePictures";
+            tabPagePictures.Padding = new Padding(3);
+            tabPagePictures.Size = new Size(520, 250);
+            tabPagePictures.TabIndex = 2;
+            tabPagePictures.Text = "Картинки";
+            tabPagePictures.UseVisualStyleBackColor = true;
+            // 
+            // PicturesGrid
+            // 
+            PicturesGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            PicturesGrid.Dock = DockStyle.Fill;
+            PicturesGrid.Location = new Point(3, 3);
+            PicturesGrid.Name = "PicturesGrid";
+            PicturesGrid.Size = new Size(514, 244);
+            PicturesGrid.TabIndex = 0;
+            // 
+            // tabPageChannels
+            // 
+            tabPageChannels.Controls.Add(ChannelsGrid);
+            tabPageChannels.Location = new Point(4, 24);
+            tabPageChannels.Name = "tabPageChannels";
+            tabPageChannels.Padding = new Padding(3);
+            tabPageChannels.Size = new Size(520, 250);
+            tabPageChannels.TabIndex = 1;
+            tabPageChannels.Text = "Каналы";
+            tabPageChannels.UseVisualStyleBackColor = true;
+            // 
+            // ChannelsGrid
+            // 
+            ChannelsGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            ChannelsGrid.Dock = DockStyle.Fill;
+            ChannelsGrid.Location = new Point(3, 3);
+            ChannelsGrid.Name = "ChannelsGrid";
+            ChannelsGrid.Size = new Size(514, 244);
+            ChannelsGrid.TabIndex = 0;
+            // 
             // tabPageConveyors
-            // =========================================================
+            // 
             tabPageConveyors.Controls.Add(ConveyorsGrid);
             tabPageConveyors.Controls.Add(btnConveyorProps);
             tabPageConveyors.Controls.Add(_cbConveyorCount);
@@ -167,99 +191,54 @@
             tabPageConveyors.TabIndex = 0;
             tabPageConveyors.Text = "Конвейеры";
             tabPageConveyors.UseVisualStyleBackColor = true;
-
+            // 
+            // ConveyorsGrid
+            // 
+            ConveyorsGrid.AllowUserToAddRows = false;
+            ConveyorsGrid.AllowUserToDeleteRows = false;
+            ConveyorsGrid.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            ConveyorsGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            ConveyorsGrid.Location = new Point(3, 40);
+            ConveyorsGrid.MultiSelect = false;
+            ConveyorsGrid.Name = "ConveyorsGrid";
+            ConveyorsGrid.ReadOnly = true;
+            ConveyorsGrid.RowHeadersVisible = false;
+            ConveyorsGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            ConveyorsGrid.Size = new Size(514, 207);
+            ConveyorsGrid.TabIndex = 0;
+            ConveyorsGrid.CellDoubleClick += ConveyorsGrid_CellDoubleClick;
+            // 
+            // btnConveyorProps
+            // 
+            btnConveyorProps.Location = new Point(180, 6);
+            btnConveyorProps.Name = "btnConveyorProps";
+            btnConveyorProps.Size = new Size(160, 27);
+            btnConveyorProps.TabIndex = 1;
+            btnConveyorProps.Text = "Свойства конвейера…";
+            btnConveyorProps.UseVisualStyleBackColor = true;
+            btnConveyorProps.Click += BtnConveyorProps_Click;
+            // 
+            // _cbConveyorCount
+            // 
+            _cbConveyorCount.DropDownStyle = ComboBoxStyle.DropDownList;
+            _cbConveyorCount.Items.AddRange(new object[] { "4", "8" });
+            _cbConveyorCount.Location = new Point(100, 8);
+            _cbConveyorCount.Name = "_cbConveyorCount";
+            _cbConveyorCount.Size = new Size(70, 23);
+            _cbConveyorCount.TabIndex = 2;
+            _cbConveyorCount.SelectedIndexChanged += CbConveyorCount_SelectedIndexChanged;
             // 
             // lblConveyorCount
             // 
             lblConveyorCount.AutoSize = true;
             lblConveyorCount.Location = new Point(10, 12);
             lblConveyorCount.Name = "lblConveyorCount";
-            lblConveyorCount.Size = new Size(79, 15);
+            lblConveyorCount.Size = new Size(76, 15);
+            lblConveyorCount.TabIndex = 3;
             lblConveyorCount.Text = "Конвейеров:";
-
             // 
-            // _cbConveyorCount
-            // 
-            this._cbConveyorCount.DropDownStyle = ComboBoxStyle.DropDownList;
-            this._cbConveyorCount.Location = new System.Drawing.Point(100, 8);
-            this._cbConveyorCount.Name = "_cbConveyorCount";
-            this._cbConveyorCount.Size = new System.Drawing.Size(70, 23);
-            this._cbConveyorCount.Items.AddRange(new object[] { "4", "8" });
-            this._cbConveyorCount.SelectedIndexChanged += CbConveyorCount_SelectedIndexChanged;
-
-            // 
-            // btnConveyorProps
-            // 
-            btnConveyorProps.Text = "Свойства конвейера…";
-            btnConveyorProps.Location = new Point(180, 6);
-            btnConveyorProps.Size = new Size(160, 27);
-            btnConveyorProps.UseVisualStyleBackColor = true;
-            btnConveyorProps.Click += BtnConveyorProps_Click;
-
-            // 
-            // ConveyorsGrid
-            // 
-            ConveyorsGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            ConveyorsGrid.Location = new Point(3, 40);
-            ConveyorsGrid.Name = "ConveyorsGrid";
-            ConveyorsGrid.Size = new Size(514, 207);
-            ConveyorsGrid.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            ConveyorsGrid.ReadOnly = true;
-            ConveyorsGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            ConveyorsGrid.MultiSelect = false;
-            ConveyorsGrid.AllowUserToAddRows = false;
-            ConveyorsGrid.AllowUserToDeleteRows = false;
-            ConveyorsGrid.RowHeadersVisible = false;
-            ConveyorsGrid.AutoGenerateColumns = false;
-            ConveyorsGrid.CellDoubleClick += ConveyorsGrid_CellDoubleClick;
-
-            // =========================================================
-            // tabPageChannels
-            // =========================================================
-            tabPageChannels.Controls.Add(ChannelsGrid);
-            tabPageChannels.Location = new Point(4, 24);
-            tabPageChannels.Name = "tabPageChannels";
-            tabPageChannels.Padding = new Padding(3);
-            tabPageChannels.Size = new Size(520, 250);
-            tabPageChannels.TabIndex = 1;
-            tabPageChannels.Text = "Каналы";
-            tabPageChannels.UseVisualStyleBackColor = true;
-
-            // 
-            // ChannelsGrid
-            // 
-            ChannelsGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            ChannelsGrid.Dock = DockStyle.Fill;
-            ChannelsGrid.Location = new Point(3, 3);
-            ChannelsGrid.Name = "ChannelsGrid";
-            ChannelsGrid.Size = new Size(514, 244);
-            ChannelsGrid.TabIndex = 0;
-
-            // =========================================================
-            // tabPagePictures
-            // =========================================================
-            tabPagePictures.Controls.Add(PicturesGrid);
-            tabPagePictures.Location = new Point(4, 24);
-            tabPagePictures.Name = "tabPagePictures";
-            tabPagePictures.Padding = new Padding(3);
-            tabPagePictures.Size = new Size(520, 250);
-            tabPagePictures.TabIndex = 2;
-            tabPagePictures.Text = "Картинки";
-            tabPagePictures.UseVisualStyleBackColor = true;
-
-            // 
-            // PicturesGrid
-            // 
-            PicturesGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            PicturesGrid.Dock = DockStyle.Fill;
-            PicturesGrid.Location = new Point(3, 3);
-            PicturesGrid.Name = "PicturesGrid";
-            PicturesGrid.Size = new Size(514, 244);
-            PicturesGrid.TabIndex = 0;
-
-            // =========================================================
             // tablesTab
-            // =========================================================
+            // 
             tablesTab.Controls.Add(tabPageConveyors);
             tablesTab.Controls.Add(tabPageChannels);
             tablesTab.Controls.Add(tabPagePictures);
@@ -268,7 +247,6 @@
             tablesTab.SelectedIndex = 0;
             tablesTab.Size = new Size(528, 278);
             tablesTab.TabIndex = 10;
-
             // 
             // label5
             // 
@@ -278,21 +256,37 @@
             label5.Size = new Size(27, 15);
             label5.TabIndex = 12;
             label5.Text = "SID:";
-
             // 
             // _udSID
             // 
             _udSID.Location = new Point(12, 71);
             _udSID.Name = "_udSID";
-            _udSID.Size = new Size(236, 23);
+            _udSID.Size = new Size(118, 23);
             _udSID.TabIndex = 13;
-
-            // =========================================================
+            // 
+            // label6
+            // 
+            label6.AutoSize = true;
+            label6.Location = new Point(259, 141);
+            label6.Name = "label6";
+            label6.Size = new Size(43, 15);
+            label6.TabIndex = 15;
+            label6.Text = "Шлюз:";
+            // 
+            // textBox1
+            // 
+            textBox1.Location = new Point(259, 159);
+            textBox1.Name = "textBox1";
+            textBox1.Size = new Size(236, 23);
+            textBox1.TabIndex = 14;
+            // 
             // EditNetGateParametersForm
-            // =========================================================
+            // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(552, 507);
+            Controls.Add(label6);
+            Controls.Add(textBox1);
             Controls.Add(_udSID);
             Controls.Add(label5);
             Controls.Add(tablesTab);
@@ -311,8 +305,6 @@
             Name = "EditNetGateParametersForm";
             StartPosition = FormStartPosition.CenterParent;
             Text = "Параметры устройства NetGate";
-
-            // Resume
             tabPagePictures.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)PicturesGrid).EndInit();
             tabPageChannels.ResumeLayout(false);
@@ -349,5 +341,7 @@
         private Label lblConveyorCount;
         private ComboBox _cbConveyorCount;
         private Button btnConveyorProps;
+        private Label label6;
+        private TextBox textBox1;
     }
 }

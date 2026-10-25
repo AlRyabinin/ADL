@@ -1,10 +1,12 @@
-﻿using AdlpLib.LiveConfig;
+﻿#nullable enable
+using AdlpLib.LiveConfig;
 using AdlpLib.Models.Devices;
 using AdlpLib.Models.Devices.Exec;
 using AdlpLib.Models.Devices.NetGate;
 using AdlpLib.Models.Devices.PU;
-using Microsoft.Data.Sqlite;
-using MySql.Data.MySqlClient;
+using AdlpLib.Persistence;
+using AdlpLib.Persistence.Entities;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
@@ -14,34 +16,36 @@ using System.Threading.Tasks;
 
 namespace AdlpLib.Configuration.Application
 {
-    /// <summary>
-    /// Краткие сведения об устройстве для отображения в списке.
-    /// </summary>
+    /// <summary>Краткие сведения об устройстве для отображения в списке.</summary>
     public class DeviceHeader
     {
         public long Id { get; set; }
-        public string ConfigType { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string DeviceType { get; set; } = "";
-        public string Mac { get; set; } = "";
-        public string Ip { get; set; } = "";
-        public string Mask { get; set; } = "";
-        public string Gateway { get; set; } = "";
+        public string ConfigType { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string DeviceType { get; set; } = string.Empty;
+        public string Mac { get; set; } = string.Empty;
+        public string Ip { get; set; } = string.Empty;
+        public string Mask { get; set; } = string.Empty;
+        public string Gateway { get; set; } = string.Empty;
         public int Block { get; set; }
 
         public override string ToString() => $"[{ConfigType}] {Name} [{Mac}]";
     }
 
     /// <summary>
-    /// Асинхронный репозиторий сохранения/загрузки конфигураций устройств (PU, EXEC, NETGATE).
-    /// Работает и с SQLite, и с MySQL — в зависимости от <see cref="DatabaseType"/>.
+    /// Репозиторий конфигураций, использующий EF Core для CRUD-операций.
+    /// SQLite/MySQL выбирается через AdlpDbContextFactory. Прямой SQL оставлен
+    /// только для DDL триггеров аудита и явного удаления схемы.
     /// </summary>
-    public class DeviceConfigRepository
+    public sealed class DeviceConfigRepository
     {
         private const string TypePu6 = "PU6";
         private const string TypePuBW = "PUBW";
-        private const string TypePu = "PU";   // legacy = PuColorConfigDto
-        private const string TypeExec = "EXEC";
+        private const string TypePu = "PU";
+        private const string TypeExec = "EXEC"; // старый тип, поддерживаем для обратной совместимости
+        private const string TypeIkb = "IKB";
+        private const string TypeDimmer220 = "DIM220";
+        private const string TypeDimmerCabinet = "DIMCABINET";
         private const string TypeNetGate = "NETGATE";
 
         private readonly string _connectionString;
@@ -53,1603 +57,956 @@ namespace AdlpLib.Configuration.Application
             _dbType = dbType;
         }
 
-        // =========================================================================
-        //  СХЕМА
-        // =========================================================================
+        private AdlpDbContext CreateDbContext() =>
+            AdlpDbContextFactory.Create(_connectionString, _dbType);
+
+        // ---------------------------------------------------------------------
+        // Инициализация схемы. Структура таблиц управляется миграциями EF Core.
+        // ---------------------------------------------------------------------
 
         public async Task EnsureSchemaAsync(CancellationToken ct = default)
         {
-            await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
+            await using var db = CreateDbContext();
+            await AdlpDatabaseInitializer.ApplyPendingMigrationsAsync(db, ct).ConfigureAwait(false);
 
-            foreach(var ddl in GetDdlBatches())
+
+            await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+            try
             {
-                await using var cmd = conn.CreateCommand();
-                cmd.CommandText = ddl;
-                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                await EnsureAuditTriggersAsync(db.Database.GetDbConnection(), ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                await db.Database.CloseConnectionAsync().ConfigureAwait(false);
             }
 
-            await EnsureAuditColumnsAsync(conn, ct).ConfigureAwait(false);
-            await EnsureAuditTriggersAsync(conn, ct).ConfigureAwait(false);
-
-            await ValidateSchemaAsync(conn, ct).ConfigureAwait(false);
+            await PrepareConnectionAsync(db, ct).ConfigureAwait(false);
         }
 
-        private async Task EnsureAuditColumnsAsync(DbConnection conn, CancellationToken ct)
-        {
-            var needed = new (string Name, string SqliteType, string MySqlType, bool NotNull)[]
-            {
-                ("Name",       "TEXT",       "VARCHAR(255)",  true),
-                ("DeviceType", "TEXT",       "VARCHAR(100)",  true),
-                ("SID",        "INTEGER",    "INT",           false),
-                ("CreatedAt",  "TEXT",       "DATETIME",      false),
-                ("CreatedBy",  "TEXT",       "VARCHAR(100)",  false),
-                ("UpdatedAt",  "TEXT",       "DATETIME",      false),
-                ("UpdatedBy",  "TEXT",       "VARCHAR(100)",  false)
-            };
-
-            var existing = await GetTableColumnsAsync(conn, "Devices", ct).ConfigureAwait(false);
-
-            foreach(var (name, sqliteType, mySqlType, notNull) in needed)
-            {
-                if(!existing.Contains(name, StringComparer.OrdinalIgnoreCase))
-                {
-                    await using var cmd = conn.CreateCommand();
-                    string nullability = notNull ? "NOT NULL DEFAULT ''" : "NULL";
-                    cmd.CommandText = _dbType == DatabaseType.SQLite
-                        ? $"ALTER TABLE Devices ADD COLUMN {name} {sqliteType} {nullability};"
-                        : $"ALTER TABLE Devices ADD COLUMN `{name}` {mySqlType} {nullability};";
-                    await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                }
-            }
-        }
-
+        /// <summary>
+        /// Оставляем триггеры аудита в БД: EF Core не имеет переносимого API
+        /// для создания триггеров, зато все обычные операции ниже выполняются через EF.
+        /// </summary>
         private async Task EnsureAuditTriggersAsync(DbConnection conn, CancellationToken ct)
         {
             if(_dbType == DatabaseType.MySQL)
             {
-                await ExecNoTxAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_bi;", ct).ConfigureAwait(false);
-                await ExecNoTxAsync(conn, @"
-            CREATE TRIGGER trg_devices_bi
-            BEFORE INSERT ON Devices
-            FOR EACH ROW
-            BEGIN
-                SET NEW.CreatedAt = UTC_TIMESTAMP();
-                SET NEW.UpdatedAt = UTC_TIMESTAMP();
-                SET NEW.CreatedBy = COALESCE(@app_user, USER());
-                SET NEW.UpdatedBy = COALESCE(@app_user, USER());
-            END;", ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_bi;", ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, @"
+CREATE TRIGGER trg_devices_bi
+BEFORE INSERT ON Devices
+FOR EACH ROW
+BEGIN
+    SET NEW.CreatedAt = UTC_TIMESTAMP();
+    SET NEW.UpdatedAt = UTC_TIMESTAMP();
+    SET NEW.CreatedBy = COALESCE(@app_user, USER());
+    SET NEW.UpdatedBy = COALESCE(@app_user, USER());
+END;", ct).ConfigureAwait(false);
 
-                await ExecNoTxAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_bu;", ct).ConfigureAwait(false);
-                await ExecNoTxAsync(conn, @"
-            CREATE TRIGGER trg_devices_bu
-            BEFORE UPDATE ON Devices
-            FOR EACH ROW
-            BEGIN
-                SET NEW.UpdatedAt = UTC_TIMESTAMP();
-                SET NEW.UpdatedBy = COALESCE(@app_user, USER());
-                SET NEW.CreatedAt = OLD.CreatedAt;
-                SET NEW.CreatedBy = OLD.CreatedBy;
-            END;", ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_bu;", ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, @"
+CREATE TRIGGER trg_devices_bu
+BEFORE UPDATE ON Devices
+FOR EACH ROW
+BEGIN
+    SET NEW.UpdatedAt = UTC_TIMESTAMP();
+    SET NEW.UpdatedBy = COALESCE(@app_user, USER());
+    SET NEW.CreatedAt = OLD.CreatedAt;
+    SET NEW.CreatedBy = OLD.CreatedBy;
+END;", ct).ConfigureAwait(false);
             }
             else
             {
-                await ExecNoTxAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_ai;", ct).ConfigureAwait(false);
-                await ExecNoTxAsync(conn, @"
-            CREATE TRIGGER trg_devices_ai
-            AFTER INSERT ON Devices
-            FOR EACH ROW
-            BEGIN
-                UPDATE Devices
-                   SET CreatedAt = datetime('now'),
-                       UpdatedAt = datetime('now'),
-                       CreatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), ''),
-                       UpdatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), '')
-                 WHERE Id = NEW.Id;
-            END;", ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_ai;", ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, @"
+CREATE TRIGGER trg_devices_ai
+AFTER INSERT ON Devices
+FOR EACH ROW
+BEGIN
+    UPDATE Devices
+       SET CreatedAt = datetime('now'),
+           UpdatedAt = datetime('now'),
+           CreatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), ''),
+           UpdatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), '')
+     WHERE Id = NEW.Id;
+END;", ct).ConfigureAwait(false);
 
-                await ExecNoTxAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_au;", ct).ConfigureAwait(false);
-                await ExecNoTxAsync(conn, @"
-            CREATE TRIGGER trg_devices_au
-            AFTER UPDATE ON Devices
-            FOR EACH ROW
-            WHEN NEW.UpdatedAt IS OLD.UpdatedAt
-            BEGIN
-                UPDATE Devices
-                   SET UpdatedAt = datetime('now'),
-                       UpdatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), '')
-                 WHERE Id = NEW.Id;
-            END;", ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_au;", ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, @"
+CREATE TRIGGER trg_devices_au
+AFTER UPDATE ON Devices
+FOR EACH ROW
+WHEN NEW.UpdatedAt IS OLD.UpdatedAt
+BEGIN
+    UPDATE Devices
+       SET UpdatedAt = datetime('now'),
+           UpdatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), '')
+     WHERE Id = NEW.Id;
+END;", ct).ConfigureAwait(false);
             }
         }
 
-        private static async Task ExecNoTxAsync(DbConnection conn, string sql, CancellationToken ct)
+        private static async Task ExecuteDdlAsync(DbConnection conn, string sql, CancellationToken ct)
         {
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = sql;
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
 
-        private async Task ValidateSchemaAsync(DbConnection conn, CancellationToken ct)
+        /// <summary>
+        /// Открывает соединение на время операции и задаёт имя пользователя для старых
+        /// audit-триггеров. При открытом соединении EF не переключает сессию посреди операции.
+        /// </summary>
+        private async Task PrepareConnectionAsync(AdlpDbContext db, CancellationToken ct)
         {
-            var required = new Dictionary<string, string[]>
+            await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+            string userName = Environment.UserName;
+
+            if(_dbType == DatabaseType.SQLite)
             {
-                ["Devices"] = new[] { "Id", "Name", "ConfigType", "DeviceType", "Mac", "Ip", "Mask", "Gateway", "Block" },
-                ["PuDevices"] = new[] { "DeviceId", "Priority", "Brightness", "SleepTimeout" },
-                ["ExecDevices"] = new[] { "DeviceId", "BaseChannel" },
-                ["NetGateDevices"] = new[] { "DeviceId", "ConveyorCount" },
-                ["NetGateConveyors"] = new[] { "Id", "DeviceId", "Local" },
-                ["NetGateChannels"] = new[] { "Id", "DeviceId", "Local", "Name", "AdlpIndex" },
-                ["NetGatePictures"] = new[] { "Id", "DeviceId", "Local", "Picture" }
-            };
+                var row = await db.AuditContext
+                    .SingleOrDefaultAsync(x => x.Key == "user", ct)
+                    .ConfigureAwait(false);
 
-            foreach(var (table, columns) in required)
+                if(row == null)
+                    db.AuditContext.Add(new AuditContextEntity { Key = "user", Value = userName });
+                else
+                    row.Value = userName;
+
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            }
+            else
             {
-                var actual = await GetTableColumnsAsync(conn, table, ct).ConfigureAwait(false);
-                if(actual.Count == 0) continue;
-
-                var missing = columns
-                    .Where(c => !actual.Contains(c, StringComparer.OrdinalIgnoreCase))
-                    .ToList();
-
-                if(missing.Count > 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Схема БД устарела. В таблице '{table}' отсутствуют колонки: " +
-                        $"{string.Join(", ", missing)}. Удалите таблицы и создайте заново.");
-                }
+                await db.Database
+                    .ExecuteSqlRawAsync("SET @app_user = {0};", new object[] { userName }, ct)
+                    .ConfigureAwait(false);
             }
         }
 
-        private async Task<List<string>> GetTableColumnsAsync(DbConnection conn, string table, CancellationToken ct)
-        {
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = _dbType == DatabaseType.SQLite
-                ? $"PRAGMA table_info({table});"
-                : $@"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-                       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{table}';";
-
-            var list = new List<string>();
-            await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            while(await r.ReadAsync(ct).ConfigureAwait(false))
-            {
-                list.Add(_dbType == DatabaseType.SQLite ? r.GetString(1) : r.GetString(0));
-            }
-            return list;
-        }
-
-        private IReadOnlyList<string> GetDdlBatches() => _dbType switch
-        {
-            DatabaseType.SQLite => SqliteDdl,
-            DatabaseType.MySQL => MySqlDdl,
-            _ => throw new NotSupportedException($"Тип БД {_dbType} не поддержан.")
-        };
-
-        // =========================================================================
-        //  СОХРАНЕНИЕ
-        // =========================================================================
+        // ---------------------------------------------------------------------
+        // Сохранение
+        // ---------------------------------------------------------------------
 
         public async Task<long> SaveAsync(DeviceConfigDtoBase dto, CancellationToken ct = default)
         {
-            await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
-            var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+            ArgumentNullException.ThrowIfNull(dto);
+
+            await using var db = CreateDbContext();
+            await PrepareConnectionAsync(db, ct).ConfigureAwait(false);
+            await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
 
             try
             {
-                string configType = dto switch
-                {
-                    Pu6ConfigDto => TypePu6,
-                    PuBWConfigDto => TypePuBW,
-                    PuColorConfigDto => TypePu,
-                    ExecConfigDto => TypeExec,
-                    NetGateConfigDto => TypeNetGate,
-                    _ => throw new NotSupportedException($"Тип {dto.GetType().Name} не поддержан.")
-                };
+                string configType = ConfigTypeOf(dto);
+                DeviceEntity device;
 
-                long deviceId = await UpsertDeviceAsync(conn, tx, dto, configType, ct);
-                await DeleteDependentsAsync(conn, tx, deviceId, ct);
+                if(dto.Id == 0)
+                {
+                    device = new DeviceEntity();
+                    db.Devices.Add(device);
+                }
+                else
+                {
+                    device = await db.Devices
+                        .SingleOrDefaultAsync(x => x.Id == dto.Id, ct)
+                        .ConfigureAwait(false)
+                        ?? throw new InvalidOperationException($"Устройство с Id={dto.Id} не найдено.");
+                }
+
+                CopyToEntity(dto, device, configType);
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                long deviceId = device.Id;
+
+                await DeleteDependentsAsync(db, deviceId, ct).ConfigureAwait(false);
+                await SaveMulticastAddressAsync(db, deviceId, dto.MulticastAdress, ct).ConfigureAwait(false);
 
                 switch(dto)
                 {
-                    case PuConfigDtoBase pu:               
-                        await SavePuDependentsAsync(conn, tx, deviceId, pu, ct);
+                    case PuConfigDtoBase pu:
+                        await SavePuDependentsAsync(db, deviceId, pu, ct).ConfigureAwait(false);
                         break;
                     case ExecConfigDto exec:
-                        await SaveExecDependentsAsync(conn, tx, deviceId, exec, ct);
+                        await SaveExecDependentsAsync(db, deviceId, exec, ct).ConfigureAwait(false);
                         break;
-                    case NetGateConfigDto ng:
-                        await SaveNetGateDependentsAsync(conn, tx, deviceId, ng, ct);
+                    case NetGateConfigDto netGate:
+                        await SaveNetGateDependentsAsync(db, deviceId, netGate, ct).ConfigureAwait(false);
                         break;
+                    default:
+                        throw new NotSupportedException($"Тип {dto.GetType().Name} не поддержан.");
                 }
 
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
                 await tx.CommitAsync(ct).ConfigureAwait(false);
                 dto.Id = deviceId;
                 return deviceId;
             }
             catch
             {
-                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
         }
 
-        private async Task<long> UpsertDeviceAsync(DbConnection conn, DbTransaction tx,
-                                                    DeviceConfigDtoBase dto,
-                                                    string configType, CancellationToken ct)
+        private static void CopyToEntity(DeviceConfigDtoBase dto, DeviceEntity entity, string configType)
         {
-            if(dto.Id == 0)
-            {
-                await ExecAsync(conn, tx,
-                    @"INSERT INTO Devices (Name, ConfigType, DeviceType, SID, Mac, Ip, Mask, Gateway, Block)
-                        VALUES (@n, @t, @dt, @sid, @m, @ip, @mask, @gw, @b);",
-                    ct,
-                    ("@n", dto.Name ?? ""),
-                    ("@t", configType),
-                    ("@dt", dto.DeviceType ?? ""),
-                    ("@sid", dto.SID),
-                    ("@m", dto.Mac ?? ""),
-                    ("@ip", dto.Ip ?? ""),
-                    ("@mask", dto.Mask ?? ""),
-                    ("@gw", dto.Gateway ?? ""),
-                    ("@b", dto.Block)).ConfigureAwait(false);
-
-                return await GetLastInsertIdAsync(conn, tx, ct).ConfigureAwait(false);
-            }
-
-            await ExecAsync(conn, tx,
-                @"UPDATE Devices
-                     SET Name = @n, ConfigType = @t, DeviceType = @dt, SID = @sid,
-                         Mac = @m, Ip = @ip, Mask = @mask, Gateway = @gw, Block = @b
-                   WHERE Id = @id;",
-                ct,
-                ("@n", dto.Name ?? ""),
-                ("@t", configType),
-                ("@dt", dto.DeviceType ?? ""),
-                ("@sid", dto.SID),
-                ("@m", dto.Mac ?? ""),
-                ("@ip", dto.Ip ?? ""),
-                ("@mask", dto.Mask ?? ""),
-                ("@gw", dto.Gateway ?? ""),
-                ("@b", dto.Block),
-                ("@id", dto.Id)).ConfigureAwait(false);
-
-            return dto.Id;
+            entity.Name = dto.Name ?? string.Empty;
+            entity.ConfigType = configType;
+            entity.DeviceType = dto.DeviceType ?? string.Empty;
+            entity.SID = dto.SID;
+            entity.Mac = dto.Mac ?? string.Empty;
+            entity.Ip = dto.Ip ?? string.Empty;
+            entity.Mask = dto.Mask ?? string.Empty;
+            entity.Gateway = dto.Gateway ?? string.Empty;
+            entity.Block = dto.Block;
         }
 
-        // ---------- PU ----------
-
-        private async Task SavePuDependentsAsync(DbConnection conn, DbTransaction tx,
-                                                  long deviceId, PuConfigDtoBase pu,
-                                                  CancellationToken ct)
+        private static async Task SaveMulticastAddressAsync(
+            AdlpDbContext db, long deviceId, string? address, CancellationToken ct)
         {
-            await ExecAsync(conn, tx,
-                @"INSERT INTO PuDevices
-                    (DeviceId, Priority, PictureSwitchTime, PageCount,
-                     SwapX, SwapY, Brightness, BrightnessSleep, SleepTimeout)
-                  VALUES
-                    (@d, @p, @pst, @pc, @sx, @sy, @br, @bs, @st);",
-                ct,
-                ("@d", deviceId),
-                ("@p", pu.Priority),
-                ("@pst", pu.PictureSwitchTime),
-                ("@pc", pu.PageCount),
-                ("@sx", pu.SwapX),
-                ("@sy", pu.SwapY),
-                ("@br", pu.Brightness),
-                ("@bs", pu.BrightnessSleep),
-                ("@st", pu.SleepTimeout)).ConfigureAwait(false);
+            var row = await db.DeviceMulticastAddresses
+                .SingleOrDefaultAsync(x => x.DeviceId == deviceId, ct)
+                .ConfigureAwait(false);
+
+            if(row == null)
+            {
+                db.DeviceMulticastAddresses.Add(new DeviceMulticastAddressEntity
+                {
+                    DeviceId = deviceId,
+                    MultiCastAdress = address?.Trim() ?? string.Empty
+                });
+            }
+            else
+            {
+                row.MultiCastAdress = address?.Trim() ?? string.Empty;
+            }
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+
+        private static async Task SavePuDependentsAsync(
+            AdlpDbContext db, long deviceId, PuConfigDtoBase pu, CancellationToken ct)
+        {
+            db.PuDevices.Add(new PuDeviceEntity
+            {
+                DeviceId = deviceId,
+                Priority = pu.Priority,
+                PictureSwitchTime = pu.PictureSwitchTime,
+                PageCount = pu.PageCount,
+                SwapX = pu.SwapX,
+                SwapY = pu.SwapY,
+                Brightness = pu.Brightness,
+                BrightnessSleep = pu.BrightnessSleep,
+                SleepTimeout = pu.SleepTimeout
+            });
 
             if(pu.Channels is { Count: > 0 })
             {
-                int pos = 0;
-                foreach(var ch in pu.Channels)
+                var channels = pu.Channels.Select(ch => new PuChannelEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO PuChannels (Local, Name, AdlpIndex, Type)
-                          VALUES (@l, @n, @i, @t);",
-                        ct,
-                        ("@l", ch.Local),
-                        ("@n", ch.Name ?? ""),
-                        ("@i", ch.Index),
-                        ("@t", ch.Type)).ConfigureAwait(false);
+                    Local = ch.Local,
+                    Name = ch.Name ?? string.Empty,
+                    AdlpIndex = ch.Index,
+                    Type = ch.Type
+                }).ToList();
 
-                    long channelId = await GetLastInsertIdAsync(conn, tx, ct).ConfigureAwait(false);
+                db.PuChannels.AddRange(channels);
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO PuDeviceChannels (DeviceId, ChannelId, Position)
-                          VALUES (@d, @c, @p);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@c", channelId),
-                        ("@p", pos++)).ConfigureAwait(false);
-                }
+                db.PuDeviceChannels.AddRange(channels.Select((ch, position) => new PuDeviceChannelEntity
+                {
+                    DeviceId = deviceId,
+                    ChannelId = ch.Id,
+                    Position = position
+                }));
             }
 
             if(pu.Groups is { Count: > 0 })
             {
-                foreach(var grp in pu.Groups)
+                var groups = pu.Groups.Select(group => (Dto: group, Entity: new PuGroupEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO PuGroups (Local, AdlpIndex)
-                          VALUES (@l, @i);",
-                        ct,
-                        ("@l", grp.Local),
-                        ("@i", grp.Index)).ConfigureAwait(false);
+                    Local = group.Local,
+                    AdlpIndex = group.Index
+                })).ToList();
 
-                    long groupId = await GetLastInsertIdAsync(conn, tx, ct).ConfigureAwait(false);
+                db.PuGroups.AddRange(groups.Select(x => x.Entity));
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO PuDeviceGroups (DeviceId, GroupId, Position)
-                          VALUES (@d, @g, @p);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@g", groupId),
-                        ("@p", grp.Local)).ConfigureAwait(false);
-
-                    if(grp.Channels is { Count: > 0 })
+                foreach(var item in groups)
+                {
+                    db.PuDeviceGroups.Add(new PuDeviceGroupEntity
                     {
-                        int slot = 1;
-                        foreach(var adlpIdx in grp.Channels)
-                        {
-                            await ExecAsync(conn, tx,
-                                @"INSERT INTO PuGroupChannels (GroupId, ChannelAdlpIndex, Slot)
-                                  VALUES (@g, @ci, @s);",
-                                ct,
-                                ("@g", groupId),
-                                ("@ci", adlpIdx),
-                                ("@s", slot++)).ConfigureAwait(false);
-                        }
+                        DeviceId = deviceId,
+                        GroupId = item.Entity.Id,
+                        Position = item.Dto.Local
+                    });
+
+                    if(item.Dto.Channels is { Count: > 0 })
+                    {
+                        db.PuGroupChannels.AddRange(item.Dto.Channels.Select((channelAdlpIndex, index) =>
+                            new PuGroupChannelEntity
+                            {
+                                GroupId = item.Entity.Id,
+                                ChannelAdlpIndex = channelAdlpIndex,
+                                Slot = index + 1
+                            }));
                     }
                 }
             }
 
             if(pu.Pictures is { Count: > 0 })
             {
-                int pos = 0;
-                foreach(var pic in pu.Pictures)
+                var pictures = pu.Pictures.Select(picture => (Dto: picture, Entity: new PuPictureEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO PuPictures (Local, Name)
-                          VALUES (@l, @n);",
-                        ct,
-                        ("@l", pic.Local),
-                        ("@n", pic.Name ?? "")).ConfigureAwait(false);
+                    Local = picture.Local,
+                    Name = picture.Name ?? string.Empty
+                })).ToList();
 
-                    long picId = await GetLastInsertIdAsync(conn, tx, ct).ConfigureAwait(false);
+                db.PuPictures.AddRange(pictures.Select(x => x.Entity));
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO PuDevicePictures (DeviceId, PictureId, Position)
-                          VALUES (@d, @p, @pos);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@p", picId),
-                        ("@pos", pos++)).ConfigureAwait(false);
-                }
+                db.PuDevicePictures.AddRange(pictures.Select((item, position) => new PuDevicePictureEntity
+                {
+                    DeviceId = deviceId,
+                    PictureId = item.Entity.Id,
+                    Position = position
+                }));
             }
 
-            if(pu.Buttons is { Count: > 0 })
+            // Кнопки существуют только у цветного ПУ.
+            if(pu is PuColorConfigDto color && color.Buttons is { Count: > 0 })
             {
-                int pos = 0;
-                foreach(var btn in pu.Buttons)
+                var buttons = color.Buttons.Select(button => (Dto: button, Entity: new PuButtonEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO PuButtons
-                            (Local, Page, LocalChannel, PosX, PosY, Icon, Color)
-                          VALUES
-                            (@l, @p, @lc, @x, @y, @i, @c);",
-                        ct,
-                        ("@l", btn.Local),
-                        ("@p", btn.Page),
-                        ("@lc", btn.LocalChannel),
-                        ("@x", btn.PosX),
-                        ("@y", btn.PosY),
-                        ("@i", btn.Icon),
-                        ("@c", btn.Color)).ConfigureAwait(false);
+                    Local = button.Local,
+                    Page = button.Page,
+                    LocalChannel = button.LocalChannel,
+                    PosX = button.PosX,
+                    PosY = button.PosY,
+                    Icon = button.Icon,
+                    Color = button.Color
+                })).ToList();
 
-                    long btnId = await GetLastInsertIdAsync(conn, tx, ct).ConfigureAwait(false);
+                db.PuButtons.AddRange(buttons.Select(x => x.Entity));
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO PuDeviceButtons (DeviceId, ButtonId, Position)
-                          VALUES (@d, @b, @p);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@b", btnId),
-                        ("@p", pos++)).ConfigureAwait(false);
+                db.PuDeviceButtons.AddRange(buttons.Select((item, position) => new PuDeviceButtonEntity
+                {
+                    DeviceId = deviceId,
+                    ButtonId = item.Entity.Id,
+                    Position = position
+                }));
 
-                    if(btn.LocalChannel > 0)
+                db.PuButtonChannels.AddRange(buttons
+                    .Where(x => x.Dto.LocalChannel > 0)
+                    .Select(x => new PuButtonChannelEntity
                     {
-                        await ExecAsync(conn, tx,
-                            @"INSERT INTO PuButtonChannels (DeviceId, ButtonId, ChannelLocal)
-                              VALUES (@d, @b, @cl);",
-                            ct,
-                            ("@d", deviceId),
-                            ("@b", btnId),
-                            ("@cl", btn.LocalChannel)).ConfigureAwait(false);
-                    }
-                }
+                        DeviceId = deviceId,
+                        ButtonId = x.Entity.Id,
+                        ChannelLocal = x.Dto.LocalChannel
+                    }));
             }
         }
 
-        // ---------- EXEC ----------
-
-        private async Task SaveExecDependentsAsync(DbConnection conn, DbTransaction tx,
-                                                    long deviceId, ExecConfigDto exec,
-                                                    CancellationToken ct)
+        private static async Task SaveExecDependentsAsync(
+            AdlpDbContext db, long deviceId, ExecConfigDto exec, CancellationToken ct)
         {
-            await ExecAsync(conn, tx,
-                @"INSERT INTO ExecDevices (DeviceId, BaseChannel)
-                  VALUES (@d, @bc);",
-                ct,
-                ("@d", deviceId),
-                ("@bc", exec.BaseChannel ?? "")).ConfigureAwait(false);
+            db.ExecDevices.Add(new ExecDeviceEntity
+            {
+                DeviceId = deviceId,
+                BaseChannel = exec.BaseChannel ?? string.Empty
+            });
 
             var streamIndexByPackedId = new Dictionary<int, int>();
             if(exec.Streams is { Count: > 0 })
             {
-                int pos = 0;
-                foreach(var st in exec.Streams)
+                var streams = exec.Streams.Select(stream => new ExecStreamEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO ExecStreams (StreamIndex, Protocol, Universe, Address)
-                          VALUES (@i, @p, @u, @a);",
-                        ct,
-                        ("@i", st.Index),
-                        ("@p", st.Protocol ?? "нет"),
-                        ("@u", st.Universe),
-                        ("@a", st.Address)).ConfigureAwait(false);
+                    StreamIndex = stream.Index,
+                    Protocol = stream.Protocol ?? "нет",
+                    Universe = stream.Universe,
+                    Address = stream.Address
+                }).ToList();
 
-                    long streamId = await GetLastInsertIdAsync(conn, tx, ct).ConfigureAwait(false);
+                db.ExecStreams.AddRange(streams);
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO ExecDeviceStreams (DeviceId, StreamId, Position)
-                          VALUES (@d, @s, @p);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@s", streamId),
-                        ("@p", pos++)).ConfigureAwait(false);
+                db.ExecDeviceStreams.AddRange(streams.Select((stream, position) => new ExecDeviceStreamEntity
+                {
+                    DeviceId = deviceId,
+                    StreamId = stream.Id,
+                    Position = position
+                }));
 
-                    streamIndexByPackedId[st.GetPackedStreamId()] = st.Index;
-                }
+                foreach(var stream in exec.Streams)
+                    streamIndexByPackedId[stream.GetPackedStreamId()] = stream.Index;
             }
 
             if(exec.Channels is { Count: > 0 })
             {
-                int pos = 0;
-                foreach(var ch in exec.Channels)
+                var channels = exec.Channels.Select(channel => (Dto: channel, Entity: new ExecChannelEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO ExecChannels
-                            (Local, GlobalIndex, Name, Control, Wide,
-                             Patch, Preheat, LimitValue, Curve, SwitchDelay)
-                          VALUES
-                            (@l, @g, @n, @c, @w, @p, @h, @lm, @cv, @sd);",
-                        ct,
-                        ("@l", ch.Local),
-                        ("@g", ch.GlobalIndex),
-                        ("@n", ch.Name ?? ""),
-                        ("@c", ch.Control ?? "adlp"),
-                        ("@w", ch.Wide ? 1 : 0),
-                        ("@p", ch.Patch),
-                        ("@h", ch.Preheat),
-                        ("@lm", ch.Limit),
-                        ("@cv", ch.Curve),
-                        ("@sd", ch.SwitchDelay)).ConfigureAwait(false);
+                    Local = channel.Local,
+                    GlobalIndex = channel.GlobalIndex,
+                    Name = channel.Name ?? string.Empty,
+                    Control = channel.Control ?? "adlp",
+                    Wide = channel.Wide,
+                    Patch = channel.Patch,
+                    Preheat = channel.Preheat,
+                    LimitValue = channel.Limit,
+                    Curve = channel.Curve,
+                    SwitchDelay = channel.SwitchDelay
+                })).ToList();
 
-                    long channelId = await GetLastInsertIdAsync(conn, tx, ct).ConfigureAwait(false);
+                db.ExecChannels.AddRange(channels.Select(x => x.Entity));
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO ExecDeviceChannels (DeviceId, ChannelId, Position)
-                          VALUES (@d, @c, @p);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@c", channelId),
-                        ("@p", pos++)).ConfigureAwait(false);
+                db.ExecDeviceChannels.AddRange(channels.Select((item, position) => new ExecDeviceChannelEntity
+                {
+                    DeviceId = deviceId,
+                    ChannelId = item.Entity.Id,
+                    Position = position
+                }));
 
-                    if(ch.StreamId != 0 &&
-                        streamIndexByPackedId.TryGetValue(ch.StreamId, out int streamIndex))
+                db.ExecChannelStreams.AddRange(channels
+                    .Where(item => item.Dto.StreamId != 0 && streamIndexByPackedId.ContainsKey(item.Dto.StreamId))
+                    .Select(item => new ExecChannelStreamEntity
                     {
-                        await ExecAsync(conn, tx,
-                            @"INSERT INTO ExecChannelStreams (DeviceId, ChannelId, StreamIndex)
-                              VALUES (@d, @c, @si);",
-                            ct,
-                            ("@d", deviceId),
-                            ("@c", channelId),
-                            ("@si", streamIndex)).ConfigureAwait(false);
-                    }
-                }
+                        DeviceId = deviceId,
+                        ChannelId = item.Entity.Id,
+                        StreamIndex = streamIndexByPackedId[item.Dto.StreamId]
+                    }));
             }
         }
 
-        // ---------- NETGATE ----------
-
-        private async Task SaveNetGateDependentsAsync(DbConnection conn, DbTransaction tx,
-                                                       long deviceId, NetGateConfigDto ng,
-                                                       CancellationToken ct)
+        private static async Task SaveNetGateDependentsAsync(
+            AdlpDbContext db, long deviceId, NetGateConfigDto netGate, CancellationToken ct)
         {
-            await ExecAsync(conn, tx,
-                @"INSERT INTO NetGateDevices (DeviceId, ConveyorCount)
-                  VALUES (@d, @cc);",
-                ct,
-                ("@d", deviceId),
-                ("@cc", ng.ConveyorCount)).ConfigureAwait(false);
-
-            if(ng.Conveyors is { Count: > 0 })
+            db.NetGateDevices.Add(new NetGateDeviceEntity
             {
-                foreach(var cv in ng.Conveyors)
+                DeviceId = deviceId,
+                ConveyorCount = netGate.ConveyorCount
+            });
+
+            if(netGate.Conveyors is { Count: > 0 })
+            {
+                db.NetGateConveyors.AddRange(netGate.Conveyors.Select(conveyor => new NetGateConveyorEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO NetGateConveyors
-                            (DeviceId, Local,
-                             SourceAProtocol, SourceAUniverse,
-                             SourceBProtocol, SourceBUniverse,
-                             SourceCProtocol, SourceCUniverse,
-                             DestinationProtocol, DestinationUniverse,
-                             SourceSelect, SumType, Frequency,
-                             Recordable, Timeouted, RdmEnabled,
-                             SumBFrom, SumBTo, SumCFrom, SumCTo)
-                          VALUES
-                            (@d, @l,
-                             @sap, @sau,
-                             @sbp, @sbu,
-                             @scp, @scu,
-                             @dp,  @du,
-                             @ss, @st, @fq,
-                             @rec, @to, @rdm,
-                             @sbf, @sbt, @scf, @sct);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@l", cv.Local),
-                        ("@sap", cv.SourceA?.Protocol ?? "нет"),
-                        ("@sau", cv.SourceA?.Universe ?? 0),
-                        ("@sbp", cv.SourceB?.Protocol ?? "нет"),
-                        ("@sbu", cv.SourceB?.Universe ?? 0),
-                        ("@scp", cv.SourceC?.Protocol ?? "нет"),
-                        ("@scu", cv.SourceC?.Universe ?? 0),
-                        ("@dp", cv.Destination?.Protocol ?? "нет"),
-                        ("@du", cv.Destination?.Universe ?? 0),
-                        ("@ss", cv.SourceSelect),
-                        ("@st", cv.SumType),
-                        ("@fq", cv.Frequency),
-                        ("@rec", cv.Recordable ? 1 : 0),
-                        ("@to", cv.Timeouted ? 1 : 0),
-                        ("@rdm", cv.RdmEnabled ? 1 : 0),
-                        ("@sbf", cv.SumBFrom),
-                        ("@sbt", cv.SumBTo),
-                        ("@scf", cv.SumCFrom),
-                        ("@sct", cv.SumCTo)).ConfigureAwait(false);
-                }
+                    DeviceId = deviceId,
+                    Local = conveyor.Local,
+                    SourceAProtocol = conveyor.SourceA?.Protocol ?? "нет",
+                    SourceAUniverse = conveyor.SourceA?.Universe ?? 0,
+                    SourceBProtocol = conveyor.SourceB?.Protocol ?? "нет",
+                    SourceBUniverse = conveyor.SourceB?.Universe ?? 0,
+                    SourceCProtocol = conveyor.SourceC?.Protocol ?? "нет",
+                    SourceCUniverse = conveyor.SourceC?.Universe ?? 0,
+                    DestinationProtocol = conveyor.Destination?.Protocol ?? "нет",
+                    DestinationUniverse = conveyor.Destination?.Universe ?? 0,
+                    SourceSelect = conveyor.SourceSelect,
+                    SumType = conveyor.SumType,
+                    Frequency = conveyor.Frequency,
+                    Recordable = conveyor.Recordable,
+                    Timeouted = conveyor.Timeouted,
+                    RdmEnabled = conveyor.RdmEnabled,
+                    SumBFrom = conveyor.SumBFrom,
+                    SumBTo = conveyor.SumBTo,
+                    SumCFrom = conveyor.SumCFrom,
+                    SumCTo = conveyor.SumCTo
+                }));
             }
 
-            if(ng.Channels is { Count: > 0 })
+            if(netGate.Channels is { Count: > 0 })
             {
-                foreach(var ch in ng.Channels)
+                db.NetGateChannels.AddRange(netGate.Channels.Select(channel => new NetGateChannelEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO NetGateChannels (DeviceId, Local, Name, AdlpIndex)
-                          VALUES (@d, @l, @n, @i);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@l", ch.Local),
-                        ("@n", ch.Name ?? ""),
-                        ("@i", ch.Index)).ConfigureAwait(false);
-                }
+                    DeviceId = deviceId,
+                    Local = channel.Local,
+                    Name = channel.Name ?? string.Empty,
+                    AdlpIndex = channel.Index
+                }));
             }
 
-            if(ng.Pictures is { Count: > 0 })
+            if(netGate.Pictures is { Count: > 0 })
             {
-                foreach(var pic in ng.Pictures)
+                db.NetGatePictures.AddRange(netGate.Pictures.Select(picture => new NetGatePictureEntity
                 {
-                    await ExecAsync(conn, tx,
-                        @"INSERT INTO NetGatePictures
-                            (DeviceId, Local, Picture, FadeIn, FadeOut,
-                             Mux1, Mux2, Mux3, Mux4)
-                          VALUES
-                            (@d, @l, @p, @fi, @fo, @m1, @m2, @m3, @m4);",
-                        ct,
-                        ("@d", deviceId),
-                        ("@l", pic.Local),
-                        ("@p", pic.Picture),
-                        ("@fi", pic.FadeIn),
-                        ("@fo", pic.FadeOut),
-                        ("@m1", pic.Mux1),
-                        ("@m2", pic.Mux2),
-                        ("@m3", pic.Mux3),
-                        ("@m4", pic.Mux4)).ConfigureAwait(false);
-                }
+                    DeviceId = deviceId,
+                    Local = picture.Local,
+                    Picture = picture.Picture,
+                    FadeIn = picture.FadeIn,
+                    FadeOut = picture.FadeOut,
+                    Mux1 = picture.Mux1,
+                    Mux2 = picture.Mux2,
+                    Mux3 = picture.Mux3,
+                    Mux4 = picture.Mux4
+                }));
             }
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
 
-        // =========================================================================
-        //  ЗАГРУЗКА
-        // =========================================================================
+        // Удаляет дочерние конфигурации перед повторным сохранением. Общие справочники
+        // каналов/групп/картин/кнопок очищаются только после удаления связей и если они не используются.
+        private static async Task DeleteDependentsAsync(AdlpDbContext db, long deviceId, CancellationToken ct)
+        {
+            await db.NetGatePictures.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.NetGateChannels.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.NetGateConveyors.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.NetGateDevices.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+
+            await db.PuButtonChannels.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.PuDeviceButtons.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.PuButtons.Where(button => !db.PuDeviceButtons.Any(link => link.ButtonId == button.Id))
+                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+
+            await db.PuGroupChannels
+                .Where(channel => db.PuDeviceGroups.Any(link => link.DeviceId == deviceId && link.GroupId == channel.GroupId))
+                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.PuDeviceGroups.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.PuGroups.Where(group => !db.PuDeviceGroups.Any(link => link.GroupId == group.Id))
+                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+
+            await db.PuDevicePictures.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.PuPictures.Where(picture => !db.PuDevicePictures.Any(link => link.PictureId == picture.Id))
+                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+
+            await db.PuDeviceChannels.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.PuChannels.Where(channel => !db.PuDeviceChannels.Any(link => link.ChannelId == channel.Id))
+                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.PuDevices.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+
+            await db.ExecChannelStreams.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.ExecDeviceChannels.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.ExecChannels.Where(channel => !db.ExecDeviceChannels.Any(link => link.ChannelId == channel.Id))
+                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.ExecDeviceStreams.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.ExecStreams.Where(stream => !db.ExecDeviceStreams.Any(link => link.StreamId == stream.Id))
+                .ExecuteDeleteAsync(ct).ConfigureAwait(false);
+            await db.ExecDevices.Where(x => x.DeviceId == deviceId).ExecuteDeleteAsync(ct).ConfigureAwait(false);
+        }
+
+        // ---------------------------------------------------------------------
+        // Загрузка
+        // ---------------------------------------------------------------------
 
         public async Task<DeviceConfigDtoBase?> LoadAsync(long deviceId, CancellationToken ct = default)
         {
-            await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
+            await using var db = CreateDbContext();
+            var device = await db.Devices.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == deviceId, ct)
+                .ConfigureAwait(false);
+            if(device == null)
+                return null;
 
-            string? configType = await LoadConfigTypeAsync(conn, deviceId, ct).ConfigureAwait(false);
-            if(configType == null) return null;
-
-            return configType switch
+            DeviceConfigDtoBase dto = device.ConfigType switch
             {
-                TypePu6 => await LoadPuAsync<Pu6ConfigDto>(conn, deviceId, ct),
-                TypePuBW => await LoadPuAsync<PuBWConfigDto>(conn, deviceId, ct),
-                TypePu => await LoadPuAsync<PuColorConfigDto>(conn, deviceId, ct),
-                TypeExec => await LoadExecAsync(conn, deviceId, ct),
-                TypeNetGate => await LoadNetGateAsync(conn, deviceId, ct),
-                _ => throw new NotSupportedException($"Неизвестный ConfigType: '{configType}'.")
+                TypePu6 => await LoadPuAsync<Pu6ConfigDto>(db, device, ct).ConfigureAwait(false),
+                TypePuBW => await LoadPuAsync<PuBWConfigDto>(db, device, ct).ConfigureAwait(false),
+                TypePu => await LoadPuAsync<PuColorConfigDto>(db, device, ct).ConfigureAwait(false),
+                TypeIkb => await LoadExecAsync<IkbConfigDto>(db, device, ct).ConfigureAwait(false),
+                TypeDimmer220 => await LoadExecAsync<Dimmer220ConfigDto>(db, device, ct).ConfigureAwait(false),
+                TypeDimmerCabinet => await LoadExecAsync<DimmerCabinetConfigDto>(db, device, ct).ConfigureAwait(false),
+                TypeExec => await LoadExecAsync<ExecConfigDto>(db, device, ct).ConfigureAwait(false),
+                TypeNetGate => await LoadNetGateAsync(db, device, ct).ConfigureAwait(false),
+                _ => throw new NotSupportedException($"Неизвестный ConfigType: '{device.ConfigType}'.")
             };
+
+            dto.MulticastAdress = await db.DeviceMulticastAddresses.AsNoTracking()
+                .Where(x => x.DeviceId == deviceId)
+                .Select(x => x.MultiCastAdress)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false) ?? string.Empty;
+
+            return dto;
         }
 
-        private static async Task<string?> LoadConfigTypeAsync(DbConnection conn, long id, CancellationToken ct)
+        private static void CopyCommonToDto(DeviceEntity device, DeviceConfigDtoBase dto)
         {
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT ConfigType FROM Devices WHERE Id = @id;";
-            AddParam(cmd, "@id", id);
-            return await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+            dto.Id = device.Id;
+            dto.Name = device.Name;
+            dto.SID = device.SID ?? 0;
+            dto.Mac = device.Mac;
+            dto.Ip = device.Ip;
+            dto.Mask = device.Mask;
+            dto.Gateway = device.Gateway;
+            dto.Block = device.Block;
         }
 
-        private async Task<TPu> LoadPuAsync<TPu>(DbConnection conn, long deviceId, CancellationToken ct)
+        private static async Task<TPu> LoadPuAsync<TPu>(
+            AdlpDbContext db, DeviceEntity device, CancellationToken ct)
             where TPu : PuConfigDtoBase, new()
         {
-            var dto = new TPu { Id = deviceId };
+            var dto = new TPu();
+            CopyCommonToDto(device, dto);
 
-            await using(var cmd = conn.CreateCommand())
+            var pu = await db.PuDevices.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.DeviceId == device.Id, ct).ConfigureAwait(false);
+            if(pu != null)
             {
-                cmd.CommandText = @"
-                    SELECT d.Name, d.SID, d.Mac, d.Ip, d.Mask, d.Gateway, d.Block,
-                           p.Priority, p.PictureSwitchTime, p.PageCount,
-                           p.SwapX, p.SwapY, p.Brightness, p.BrightnessSleep, p.SleepTimeout
-                      FROM Devices d
-                      INNER JOIN PuDevices p ON p.DeviceId = d.Id
-                     WHERE d.Id = @id;";
-                AddParam(cmd, "@id", deviceId);
-
-                await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                if(await r.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    dto.Name = GetStringSafe(r, 0);
-                    dto.SID = GetInt32Safe(r, 1);
-                    dto.Mac = GetStringSafe(r, 2);
-                    dto.Ip = GetStringSafe(r, 3);
-                    dto.Mask = GetStringSafe(r, 4);
-                    dto.Gateway = GetStringSafe(r, 5);
-                    dto.Block = GetInt32Safe(r, 6);
-                    dto.Priority = GetInt32Safe(r, 7);
-                    dto.PictureSwitchTime = GetInt32Safe(r, 8);
-                    dto.PageCount = GetInt32Safe(r, 9);
-                    dto.SwapX = GetInt32Safe(r, 10);
-                    dto.SwapY = GetInt32Safe(r, 11);
-                    dto.Brightness = GetInt32Safe(r, 12);
-                    dto.BrightnessSleep = GetInt32Safe(r, 13);
-                    dto.SleepTimeout = GetInt32Safe(r, 14);
-                }
+                dto.Priority = pu.Priority;
+                dto.PictureSwitchTime = pu.PictureSwitchTime;
+                dto.PageCount = pu.PageCount;
+                dto.SwapX = pu.SwapX;
+                dto.SwapY = pu.SwapY;
+                dto.Brightness = pu.Brightness;
+                dto.BrightnessSleep = pu.BrightnessSleep;
+                dto.SleepTimeout = pu.SleepTimeout;
             }
 
-            dto.Channels ??= new List<LiveControlChannelCfg>();
-            dto.Groups ??= new List<LiveControlGroupCfg>();
-            dto.Pictures ??= new List<LiveControlPictureCfg>();
-            dto.Buttons ??= new List<LiveControlButtonCfg>();
+            var channelRows = await (from link in db.PuDeviceChannels.AsNoTracking()
+                                     join channel in db.PuChannels.AsNoTracking() on link.ChannelId equals channel.Id
+                                     where link.DeviceId == device.Id
+                                     orderby link.Position
+                                     select new { channel.Local, channel.Name, channel.AdlpIndex, channel.Type })
+                .ToListAsync(ct).ConfigureAwait(false);
+            dto.Channels = channelRows.Select(x => new LiveControlChannelCfg
+            {
+                Local = x.Local,
+                Name = x.Name,
+                Index = x.AdlpIndex,
+                Type = x.Type
+            }).ToList();
+
+            var groupLinks = await db.PuDeviceGroups.AsNoTracking()
+                .Where(x => x.DeviceId == device.Id)
+                .OrderBy(x => x.Position)
+                .ToListAsync(ct).ConfigureAwait(false);
+            var groupIds = groupLinks.Select(x => x.GroupId).ToList();
+            var groupsById = groupIds.Count == 0
+                ? new Dictionary<long, PuGroupEntity>()
+                : await db.PuGroups.AsNoTracking().Where(x => groupIds.Contains(x.Id))
+                    .ToDictionaryAsync(x => x.Id, ct).ConfigureAwait(false);
+            var groupChannelRows = groupIds.Count == 0
+                ? new List<PuGroupChannelEntity>()
+                : await db.PuGroupChannels.AsNoTracking().Where(x => groupIds.Contains(x.GroupId))
+                    .OrderBy(x => x.Slot).ToListAsync(ct).ConfigureAwait(false);
+
+            dto.Groups = groupLinks
+                .Where(link => groupsById.ContainsKey(link.GroupId))
+                .Select(link =>
+                {
+                    var group = groupsById[link.GroupId];
+                    return new LiveControlGroupCfg
+                    {
+                        Local = group.Local,
+                        Index = group.AdlpIndex,
+                        Channels = groupChannelRows.Where(x => x.GroupId == group.Id)
+                            .OrderBy(x => x.Slot)
+                            .Select(x => x.ChannelAdlpIndex)
+                            .ToList()
+                    };
+                }).ToList();
+
+            var pictureRows = await (from link in db.PuDevicePictures.AsNoTracking()
+                                     join picture in db.PuPictures.AsNoTracking() on link.PictureId equals picture.Id
+                                     where link.DeviceId == device.Id
+                                     orderby link.Position
+                                     select new { picture.Local, picture.Name })
+                .ToListAsync(ct).ConfigureAwait(false);
+            dto.Pictures = pictureRows.Select(x => new LiveControlPictureCfg
+            {
+                Local = x.Local,
+                Name = x.Name
+            }).ToList();
+
+            if(dto is PuColorConfigDto color)
+            {
+                var buttonRows = await (from link in db.PuDeviceButtons.AsNoTracking()
+                                        join button in db.PuButtons.AsNoTracking() on link.ButtonId equals button.Id
+                                        where link.DeviceId == device.Id
+                                        orderby link.Position
+                                        select new
+                                        {
+                                            button.Local,
+                                            button.Page,
+                                            button.LocalChannel,
+                                            button.PosX,
+                                            button.PosY,
+                                            button.Icon,
+                                            button.Color
+                                        })
+                    .ToListAsync(ct).ConfigureAwait(false);
+
+                color.Buttons = buttonRows.Select(x => new LiveControlButtonCfg
+                {
+                    Local = x.Local,
+                    Page = x.Page,
+                    LocalChannel = x.LocalChannel,
+                    PosX = x.PosX,
+                    PosY = x.PosY,
+                    Icon = x.Icon,
+                    Color = x.Color
+                }).ToList();
+            }
+
             return dto;
         }
 
-        private async Task<ExecConfigDto> LoadExecAsync(DbConnection conn, long deviceId, CancellationToken ct)
+        private static async Task<TExec> LoadExecAsync<TExec>(
+            AdlpDbContext db, DeviceEntity device, CancellationToken ct)
+            where TExec : ExecConfigDto, new()
         {
-            var dto = new ExecConfigDto { Id = deviceId };
+            var dto = new TExec();
+            CopyCommonToDto(device, dto);
 
-            await using(var cmd = conn.CreateCommand())
+            var execDevice = await db.ExecDevices.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.DeviceId == device.Id, ct).ConfigureAwait(false);
+            dto.BaseChannel = execDevice?.BaseChannel ?? string.Empty;
+
+            var streamRows = await (from link in db.ExecDeviceStreams.AsNoTracking()
+                                    join stream in db.ExecStreams.AsNoTracking() on link.StreamId equals stream.Id
+                                    where link.DeviceId == device.Id
+                                    orderby link.Position
+                                    select new { stream.StreamIndex, stream.Protocol, stream.Universe, stream.Address })
+                .ToListAsync(ct).ConfigureAwait(false);
+            dto.Streams = streamRows.Select(x => new LiveStreamCfg
             {
-                cmd.CommandText = @"
-                    SELECT d.Name, d.SID, d.Mac, d.Ip, d.Mask, d.Gateway, d.Block, e.BaseChannel
-                      FROM Devices d
-                      INNER JOIN ExecDevices e ON e.DeviceId = d.Id
-                     WHERE d.Id = @id;";
-                AddParam(cmd, "@id", deviceId);
+                Index = x.StreamIndex,
+                Protocol = x.Protocol,
+                Universe = x.Universe,
+                Address = x.Address
+            }).ToList();
 
-                await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                if(await r.ReadAsync(ct).ConfigureAwait(false))
+            var streamPackedIds = dto.Streams
+                .GroupBy(x => x.Index)
+                .ToDictionary(x => x.Key, x => x.First().GetPackedStreamId());
+            var channelStreamRows = await db.ExecChannelStreams.AsNoTracking()
+                .Where(x => x.DeviceId == device.Id)
+                .ToListAsync(ct).ConfigureAwait(false);
+            var streamIndexByChannelId = channelStreamRows
+                .GroupBy(x => x.ChannelId)
+                .ToDictionary(x => x.Key, x => x.First().StreamIndex);
+
+            var channelRows = await (from link in db.ExecDeviceChannels.AsNoTracking()
+                                     join channel in db.ExecChannels.AsNoTracking() on link.ChannelId equals channel.Id
+                                     where link.DeviceId == device.Id
+                                     orderby link.Position
+                                     select new
+                                     {
+                                         link.ChannelId,
+                                         channel.Local,
+                                         channel.GlobalIndex,
+                                         channel.Name,
+                                         channel.Control,
+                                         channel.Wide,
+                                         channel.Patch,
+                                         channel.Preheat,
+                                         channel.LimitValue,
+                                         channel.Curve,
+                                         channel.SwitchDelay
+                                     })
+                .ToListAsync(ct).ConfigureAwait(false);
+
+            dto.Channels = channelRows.Select(x =>
+            {
+                int streamId = streamIndexByChannelId.TryGetValue(x.ChannelId, out var streamIndex)
+                    && streamPackedIds.TryGetValue(streamIndex, out var packedId)
+                    ? packedId
+                    : 0;
+
+                return new LiveChannelCfg
                 {
-                    dto.Name = GetStringSafe(r, 0);
-                    dto.SID = GetInt32Safe(r, 1);
-                    dto.Mac = GetStringSafe(r, 2);
-                    dto.Ip = GetStringSafe(r, 3);
-                    dto.Mask = GetStringSafe(r, 4);
-                    dto.Gateway = GetStringSafe(r, 5);
-                    dto.Block = GetInt32Safe(r, 6);
-                    dto.BaseChannel = GetStringSafe(r, 7);
-                }
-            }
+                    Local = x.Local,
+                    GlobalIndex = x.GlobalIndex,
+                    Name = x.Name,
+                    Control = x.Control,
+                    Wide = x.Wide,
+                    StreamId = streamId,
+                    Patch = x.Patch,
+                    Preheat = x.Preheat,
+                    Limit = x.LimitValue,
+                    Curve = x.Curve,
+                    SwitchDelay = x.SwitchDelay
+                };
+            }).ToList();
 
-            dto.Streams ??= new List<LiveStreamCfg>();
-            dto.Channels ??= new List<LiveChannelCfg>();
             return dto;
         }
 
-        private async Task<NetGateConfigDto> LoadNetGateAsync(DbConnection conn, long deviceId, CancellationToken ct)
+        private static async Task<NetGateConfigDto> LoadNetGateAsync(
+            AdlpDbContext db, DeviceEntity device, CancellationToken ct)
         {
-            var dto = new NetGateConfigDto { Id = deviceId };
+            var dto = new NetGateConfigDto();
+            CopyCommonToDto(device, dto);
 
-            // Base + NetGateDevices
-            await using(var cmd = conn.CreateCommand())
+            var netGate = await db.NetGateDevices.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.DeviceId == device.Id, ct).ConfigureAwait(false);
+            dto.ConveyorCount = netGate?.ConveyorCount ?? 0;
+
+            var conveyorRows = await db.NetGateConveyors.AsNoTracking()
+                .Where(x => x.DeviceId == device.Id)
+                .OrderBy(x => x.Local)
+                .ToListAsync(ct).ConfigureAwait(false);
+            dto.Conveyors = conveyorRows.Select(x => new NetGateConveyorCfg
             {
-                cmd.CommandText = @"
-                    SELECT d.Name, d.SID, d.Mac, d.Ip, d.Mask, d.Gateway, d.Block,
-                           ng.ConveyorCount
-                      FROM Devices d
-                      INNER JOIN NetGateDevices ng ON ng.DeviceId = d.Id
-                     WHERE d.Id = @id;";
-                AddParam(cmd, "@id", deviceId);
+                Local = x.Local,
+                SourceA = new NetGateSourceCfg { Protocol = x.SourceAProtocol, Universe = x.SourceAUniverse },
+                SourceB = new NetGateSourceCfg { Protocol = x.SourceBProtocol, Universe = x.SourceBUniverse },
+                SourceC = new NetGateSourceCfg { Protocol = x.SourceCProtocol, Universe = x.SourceCUniverse },
+                Destination = new NetGateSourceCfg { Protocol = x.DestinationProtocol, Universe = x.DestinationUniverse },
+                SourceSelect = x.SourceSelect,
+                SumType = x.SumType,
+                Frequency = x.Frequency,
+                Recordable = x.Recordable,
+                Timeouted = x.Timeouted,
+                RdmEnabled = x.RdmEnabled,
+                SumBFrom = x.SumBFrom,
+                SumBTo = x.SumBTo,
+                SumCFrom = x.SumCFrom,
+                SumCTo = x.SumCTo
+            }).ToList();
 
-                await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                if(await r.ReadAsync(ct).ConfigureAwait(false))
+            dto.Channels = await db.NetGateChannels.AsNoTracking()
+                .Where(x => x.DeviceId == device.Id)
+                .OrderBy(x => x.Local)
+                .Select(x => new NetGateChannelCfg
                 {
-                    dto.Name = GetStringSafe(r, 0);
-                    dto.SID = GetInt32Safe(r, 1);
-                    dto.Mac = GetStringSafe(r, 2);
-                    dto.Ip = GetStringSafe(r, 3);
-                    dto.Mask = GetStringSafe(r, 4);
-                    dto.Gateway = GetStringSafe(r, 5);
-                    dto.Block = GetInt32Safe(r, 6);
-                    dto.ConveyorCount = GetInt32Safe(r, 7);
-                }
-            }
+                    Local = x.Local,
+                    Name = x.Name,
+                    Index = x.AdlpIndex
+                })
+                .ToListAsync(ct).ConfigureAwait(false);
 
-            // Conveyors
-            dto.Conveyors = new List<NetGateConveyorCfg>();
-            await using(var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = @"
-                    SELECT Local,
-                           SourceAProtocol, SourceAUniverse,
-                           SourceBProtocol, SourceBUniverse,
-                           SourceCProtocol, SourceCUniverse,
-                           DestinationProtocol, DestinationUniverse,
-                           SourceSelect, SumType, Frequency,
-                           Recordable, Timeouted, RdmEnabled,
-                           SumBFrom, SumBTo, SumCFrom, SumCTo
-                      FROM NetGateConveyors
-                     WHERE DeviceId = @id
-                     ORDER BY Local;";
-                AddParam(cmd, "@id", deviceId);
-                await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                while(await r.ReadAsync(ct).ConfigureAwait(false))
+            dto.Pictures = await db.NetGatePictures.AsNoTracking()
+                .Where(x => x.DeviceId == device.Id)
+                .OrderBy(x => x.Local)
+                .Select(x => new NetGatePictureCfg
                 {
-                    dto.Conveyors.Add(new NetGateConveyorCfg
-                    {
-                        Local = r.GetInt32(0),
-                        SourceA = new NetGateSourceCfg { Protocol = GetStringSafe(r, 1), Universe = GetInt32Safe(r, 2) },
-                        SourceB = new NetGateSourceCfg { Protocol = GetStringSafe(r, 3), Universe = GetInt32Safe(r, 4) },
-                        SourceC = new NetGateSourceCfg { Protocol = GetStringSafe(r, 5), Universe = GetInt32Safe(r, 6) },
-                        Destination = new NetGateSourceCfg { Protocol = GetStringSafe(r, 7), Universe = GetInt32Safe(r, 8) },
-                        SourceSelect = GetInt32Safe(r, 9),
-                        SumType = GetInt32Safe(r, 10),
-                        Frequency = GetInt32Safe(r, 11),
-                        Recordable = GetInt32Safe(r, 12) != 0,
-                        Timeouted = GetInt32Safe(r, 13) != 0,
-                        RdmEnabled = GetInt32Safe(r, 14) != 0,
-                        SumBFrom = GetInt32Safe(r, 15),
-                        SumBTo = GetInt32Safe(r, 16),
-                        SumCFrom = GetInt32Safe(r, 17),
-                        SumCTo = GetInt32Safe(r, 18)
-                    });
-                }
-            }
-
-            // Channels
-            dto.Channels = new List<NetGateChannelCfg>();
-            await using(var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = @"
-                    SELECT Local, Name, AdlpIndex
-                      FROM NetGateChannels
-                     WHERE DeviceId = @id
-                     ORDER BY Local;";
-                AddParam(cmd, "@id", deviceId);
-                await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                while(await r.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    dto.Channels.Add(new NetGateChannelCfg
-                    {
-                        Local = r.GetInt32(0),
-                        Name = GetStringSafe(r, 1),
-                        Index = GetInt32Safe(r, 2)
-                    });
-                }
-            }
-
-            // Pictures
-            dto.Pictures = new List<NetGatePictureCfg>();
-            await using(var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = @"
-                    SELECT Local, Picture, FadeIn, FadeOut,
-                           Mux1, Mux2, Mux3, Mux4
-                      FROM NetGatePictures
-                     WHERE DeviceId = @id
-                     ORDER BY Local;";
-                AddParam(cmd, "@id", deviceId);
-                await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                while(await r.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    dto.Pictures.Add(new NetGatePictureCfg
-                    {
-                        Local = r.GetInt32(0),
-                        Picture = GetInt32Safe(r, 1),
-                        FadeIn = GetInt32Safe(r, 2),
-                        FadeOut = GetInt32Safe(r, 3),
-                        Mux1 = GetInt32Safe(r, 4),
-                        Mux2 = GetInt32Safe(r, 5),
-                        Mux3 = GetInt32Safe(r, 6),
-                        Mux4 = GetInt32Safe(r, 7)
-                    });
-                }
-            }
+                    Local = x.Local,
+                    Picture = x.Picture,
+                    FadeIn = x.FadeIn,
+                    FadeOut = x.FadeOut,
+                    Mux1 = x.Mux1,
+                    Mux2 = x.Mux2,
+                    Mux3 = x.Mux3,
+                    Mux4 = x.Mux4
+                })
+                .ToListAsync(ct).ConfigureAwait(false);
 
             return dto;
         }
 
-        // =========================================================================
-        //  СПИСОК И УДАЛЕНИЕ
-        // =========================================================================
+        // ---------------------------------------------------------------------
+        // Список, поиск, удаление
+        // ---------------------------------------------------------------------
 
         public async Task<List<DeviceHeader>> GetAllHeadersAsync(CancellationToken ct = default)
         {
-            await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
-                SELECT Id, Name, ConfigType, DeviceType, Mac, Ip, Mask, Gateway, Block
-                  FROM Devices
-                 ORDER BY ConfigType, Mac;";
-
-            var list = new List<DeviceHeader>();
-            await using var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            while(await r.ReadAsync(ct).ConfigureAwait(false))
-            {
-                list.Add(new DeviceHeader
+            await using var db = CreateDbContext();
+            return await db.Devices.AsNoTracking()
+                .OrderBy(x => x.ConfigType)
+                .ThenBy(x => x.Mac)
+                .Select(x => new DeviceHeader
                 {
-                    Id = r.GetInt64(0),
-                    Name = GetStringSafe(r, 1),
-                    ConfigType = GetStringSafe(r, 2),
-                    DeviceType = GetStringSafe(r, 3),
-                    Mac = GetStringSafe(r, 4),
-                    Ip = GetStringSafe(r, 5),
-                    Mask = GetStringSafe(r, 6),
-                    Gateway = GetStringSafe(r, 7),
-                    Block = GetInt32Safe(r, 8)
-                });
-            }
-            return list;
+                    Id = x.Id,
+                    ConfigType = x.ConfigType,
+                    Name = x.Name,
+                    DeviceType = x.DeviceType,
+                    Mac = x.Mac,
+                    Ip = x.Ip,
+                    Mask = x.Mask,
+                    Gateway = x.Gateway,
+                    Block = x.Block
+                })
+                .ToListAsync(ct).ConfigureAwait(false);
         }
 
         public async Task DeleteAsync(long deviceId, CancellationToken ct = default)
         {
-            await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
-            var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using var db = CreateDbContext();
+            await PrepareConnectionAsync(db, ct).ConfigureAwait(false);
+            await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
             try
             {
-                await DeleteDependentsAsync(conn, tx, deviceId, ct).ConfigureAwait(false);
+                await DeleteDependentsAsync(db, deviceId, ct).ConfigureAwait(false);
+                await db.DeviceMulticastAddresses.Where(x => x.DeviceId == deviceId)
+                    .ExecuteDeleteAsync(ct).ConfigureAwait(false);
 
-                await ExecAsync(conn, tx, "DELETE FROM Devices WHERE Id = @id;", ct,
-                    ("@id", deviceId)).ConfigureAwait(false);
+                var device = await db.Devices.SingleOrDefaultAsync(x => x.Id == deviceId, ct)
+                    .ConfigureAwait(false);
+                if(device != null)
+                    db.Devices.Remove(device);
 
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
                 await tx.CommitAsync(ct).ConfigureAwait(false);
             }
             catch
             {
-                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
         }
 
+        /// <summary>
+        /// Явное удаление таблиц (административная операция). Обычная работа репозитория
+        /// не использует ручной SQL. Таблица истории удаляется последней, чтобы EnsureSchemaAsync
+        /// смог повторно запустить начальную миграцию после сброса.
+        /// </summary>
         public async Task DropSchemaAsync(CancellationToken ct = default)
         {
-            await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
+            await using var db = CreateDbContext();
+            await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+            try
+            {
+                var conn = db.Database.GetDbConnection();
+                await ExecuteDdlAsync(conn, _dbType == DatabaseType.SQLite
+                    ? "PRAGMA foreign_keys = OFF;"
+                    : "SET FOREIGN_KEY_CHECKS = 0;", ct).ConfigureAwait(false);
 
-            if(_dbType == DatabaseType.SQLite)
-            {
-                await using var pragma = conn.CreateCommand();
-                pragma.CommandText = "PRAGMA foreign_keys = OFF;";
-                await pragma.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-            else
-            {
-                await using var pragma = conn.CreateCommand();
-                pragma.CommandText = "SET FOREIGN_KEY_CHECKS = 0;";
-                await pragma.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
+                string[] tables =
+                {
+                    "DeviceGroupDevices", "DeviceGroups",
+                    "DeviceMulticastAddresses",
+                    "NetGatePictures", "NetGateChannels", "NetGateConveyors", "NetGateDevices",
+                    "ExecChannelStreams", "ExecDeviceChannels", "ExecChannels",
+                    "ExecDeviceStreams", "ExecStreams", "ExecDevices",
+                    "PuButtonChannels", "PuDeviceButtons", "PuButtons",
+                    "PuDevicePictures", "PuPictures", "PuGroupChannels", "PuDeviceGroups",
+                    "PuGroups", "PuDeviceChannels", "PuChannels", "PuDevices",
+                    "Devices", "_audit_context", "__EFMigrationsHistory"
+                };
 
-            var tables = new[]
-            {
-                // NetGate
-                "NetGatePictures",
-                "NetGateChannels",
-                "NetGateConveyors",
-                "NetGateDevices",
-                // PU
-                "PuButtonChannels",
-                "PuDeviceButtons",
-                "PuButtons",
-                "PuGroupChannels",
-                "PuDeviceGroups",
-                "PuGroups",
-                "PuDevicePictures",
-                "PuPictures",
-                "PuDeviceChannels",
-                "PuChannels",
-                "PuDevices",
-                // EXEC
-                "ExecChannelStreams",
-                "ExecDeviceChannels",
-                "ExecChannels",
-                "ExecDeviceStreams",
-                "ExecStreams",
-                "ExecDevices",
-                // Общая
-                "Devices"
-            };
+                foreach(var table in tables)
+                {
+                    string quoted = _dbType == DatabaseType.SQLite ? $"\"{table}\"" : $"`{table}`";
+                    await ExecuteDdlAsync(conn, $"DROP TABLE IF EXISTS {quoted};", ct).ConfigureAwait(false);
+                }
 
-            foreach(var table in tables)
-            {
-                await using var cmd = conn.CreateCommand();
-                cmd.CommandText = _dbType == DatabaseType.SQLite
-                    ? $"DROP TABLE IF EXISTS {table};"
-                    : $"DROP TABLE IF EXISTS `{table}`;";
-                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                await ExecuteDdlAsync(conn, _dbType == DatabaseType.SQLite
+                    ? "PRAGMA foreign_keys = ON;"
+                    : "SET FOREIGN_KEY_CHECKS = 1;", ct).ConfigureAwait(false);
             }
-
-            if(_dbType == DatabaseType.SQLite)
+            finally
             {
-                await using var pragma = conn.CreateCommand();
-                pragma.CommandText = "PRAGMA foreign_keys = ON;";
-                await pragma.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-            else
-            {
-                await using var pragma = conn.CreateCommand();
-                pragma.CommandText = "SET FOREIGN_KEY_CHECKS = 1;";
-                await pragma.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                await db.Database.CloseConnectionAsync().ConfigureAwait(false);
             }
         }
 
-        /// <summary>Строковый код типа для поля <c>Devices.ConfigType</c>.</summary>
         public static string ConfigTypeOf(DeviceConfigDtoBase dto) => dto switch
         {
             Pu6ConfigDto => TypePu6,
             PuBWConfigDto => TypePuBW,
             PuColorConfigDto => TypePu,
+            IkbConfigDto => TypeIkb,
+            Dimmer220ConfigDto => TypeDimmer220,
+            DimmerCabinetConfigDto => TypeDimmerCabinet,
             ExecConfigDto => TypeExec,
             NetGateConfigDto => TypeNetGate,
             _ => throw new NotSupportedException($"Тип {dto.GetType().Name} не поддержан.")
         };
 
-        public async Task<long?> FindDeviceIdByMacAsync(string mac, string configType,
-                                                         CancellationToken ct = default)
+        public async Task<long?> FindDeviceIdByMacAsync(
+            string mac, string configType, CancellationToken ct = default)
         {
-            if(string.IsNullOrWhiteSpace(mac)) return null;
+            if(string.IsNullOrWhiteSpace(mac))
+                return null;
 
-            await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
-                SELECT Id FROM Devices
-                 WHERE Mac = @m AND ConfigType = @t
-                 LIMIT 1;";
-            AddParam(cmd, "@m", mac);
-            AddParam(cmd, "@t", configType);
-
-            var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-            return result == null ? null : Convert.ToInt64(result);
+            await using var db = CreateDbContext();
+            return await db.Devices.AsNoTracking()
+                .Where(x => x.Mac == mac && x.ConfigType == configType)
+                .OrderBy(x => x.Id)
+                .Select(x => (long?)x.Id)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
         }
-
-        // =========================================================================
-        //  ВНУТРЕННИЕ МЕТОДЫ
-        // =========================================================================
-
-        private async Task<DbConnection> OpenConnectionAsync(CancellationToken ct)
-        {
-            DbConnection conn = _dbType switch
-            {
-                DatabaseType.SQLite => new SqliteConnection(_connectionString),
-                DatabaseType.MySQL => new MySqlConnection(_connectionString),
-                _ => throw new NotSupportedException()
-            };
-
-            await conn.OpenAsync(ct).ConfigureAwait(false);
-
-            string userName = Environment.UserName;
-
-            if(_dbType == DatabaseType.SQLite)
-            {
-                await using(var pragma = conn.CreateCommand())
-                {
-                    pragma.CommandText = "PRAGMA foreign_keys = ON;";
-                    await pragma.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                }
-
-                await using(var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = @"
-                        CREATE TABLE IF NOT EXISTS _audit_context (key TEXT PRIMARY KEY, value TEXT);
-                        INSERT OR REPLACE INTO _audit_context (key, value) VALUES ('user', @u);";
-                    AddParam(cmd, "@u", userName);
-                    await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                }
-            }
-            else
-            {
-                await using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SET @app_user = @u;";
-                AddParam(cmd, "@u", userName);
-                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-
-            return conn;
-        }
-
-        private async Task<long> GetLastInsertIdAsync(DbConnection conn, DbTransaction tx,
-                                                       CancellationToken ct)
-        {
-            await using var cmd = conn.CreateCommand();
-            cmd.Transaction = tx;
-            cmd.CommandText = _dbType == DatabaseType.SQLite
-                ? "SELECT last_insert_rowid();"
-                : "SELECT LAST_INSERT_ID();";
-            var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-            return Convert.ToInt64(result);
-        }
-
-        private static async Task<int> ExecAsync(DbConnection conn, DbTransaction tx,
-                                                  string sql, CancellationToken ct,
-                                                  params (string Name, object? Value)[] parameters)
-        {
-            await using var cmd = conn.CreateCommand();
-            cmd.Transaction = tx;
-            cmd.CommandText = sql;
-
-            foreach(var (name, value) in parameters)
-            {
-                var p = cmd.CreateParameter();
-                p.ParameterName = name;
-                p.Value = value ?? DBNull.Value;
-                cmd.Parameters.Add(p);
-            }
-
-            return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
-
-        private static void AddParam(DbCommand cmd, string name, object? value)
-        {
-            var p = cmd.CreateParameter();
-            p.ParameterName = name;
-            p.Value = value ?? DBNull.Value;
-            cmd.Parameters.Add(p);
-        }
-
-        private async Task DeleteDependentsAsync(DbConnection conn, DbTransaction tx,
-                                                  long deviceId, CancellationToken ct)
-        {
-            // NetGate
-            await ExecAsync(conn, tx, "DELETE FROM NetGatePictures WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM NetGateChannels WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM NetGateConveyors WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM NetGateDevices WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-
-            // PU
-            await ExecAsync(conn, tx, "DELETE FROM PuButtonChannels WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM PuDeviceButtons  WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx,
-                "DELETE FROM PuButtons WHERE Id NOT IN (SELECT ButtonId FROM PuDeviceButtons);",
-                ct).ConfigureAwait(false);
-            await ExecAsync(conn, tx,
-                @"DELETE FROM PuGroupChannels
-                   WHERE GroupId IN (SELECT GroupId FROM PuDeviceGroups WHERE DeviceId = @d);",
-                ct, ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM PuDeviceGroups  WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx,
-                "DELETE FROM PuGroups WHERE Id NOT IN (SELECT GroupId FROM PuDeviceGroups);",
-                ct).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM PuDevicePictures WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx,
-                "DELETE FROM PuPictures WHERE Id NOT IN (SELECT PictureId FROM PuDevicePictures);",
-                ct).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM PuDeviceChannels WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx,
-                "DELETE FROM PuChannels WHERE Id NOT IN (SELECT ChannelId FROM PuDeviceChannels);",
-                ct).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM PuDevices WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-
-            // EXEC
-            await ExecAsync(conn, tx, "DELETE FROM ExecChannelStreams WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM ExecDeviceChannels WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx,
-                "DELETE FROM ExecChannels WHERE Id NOT IN (SELECT ChannelId FROM ExecDeviceChannels);",
-                ct).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM ExecDeviceStreams WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-            await ExecAsync(conn, tx,
-                "DELETE FROM ExecStreams WHERE Id NOT IN (SELECT StreamId FROM ExecDeviceStreams);",
-                ct).ConfigureAwait(false);
-            await ExecAsync(conn, tx, "DELETE FROM ExecDevices WHERE DeviceId = @d;", ct,
-                ("@d", deviceId)).ConfigureAwait(false);
-        }
-
-        private static string GetStringSafe(DbDataReader r, int ordinal)
-            => r.IsDBNull(ordinal) ? string.Empty : r.GetString(ordinal);
-
-        private static int GetInt32Safe(DbDataReader r, int ordinal)
-            => r.IsDBNull(ordinal) ? 0 : r.GetInt32(ordinal);
-
-        // =========================================================================
-        //  DDL
-        // =========================================================================
-
-        private static readonly string[] SqliteDdl =
-        {
-        @"CREATE TABLE IF NOT EXISTS Devices (
-            Id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            Name        TEXT NOT NULL DEFAULT '',
-            ConfigType  TEXT NOT NULL,
-            DeviceType  TEXT NOT NULL DEFAULT '',
-            SID         INTEGER NULL,
-            Mac         TEXT NOT NULL DEFAULT '',
-            Ip          TEXT NOT NULL DEFAULT '',
-            Mask        TEXT NOT NULL DEFAULT '',
-            Gateway     TEXT NOT NULL DEFAULT '',
-            Block       INTEGER NOT NULL DEFAULT 0,
-            CreatedAt   TEXT NULL,
-            CreatedBy   TEXT NULL,
-            UpdatedAt   TEXT NULL,
-            UpdatedBy   TEXT NULL
-        );",
-
-        @"CREATE TABLE IF NOT EXISTS PuDevices (
-            DeviceId INTEGER PRIMARY KEY,
-            Priority INTEGER NOT NULL DEFAULT 5,
-            PictureSwitchTime INTEGER NOT NULL DEFAULT 0,
-            PageCount INTEGER NOT NULL DEFAULT 1,
-            SwapX INTEGER NOT NULL DEFAULT 0,
-            SwapY INTEGER NOT NULL DEFAULT 0,
-            Brightness INTEGER NOT NULL DEFAULT 100,
-            BrightnessSleep INTEGER NOT NULL DEFAULT 100,
-            SleepTimeout INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS PuChannels (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            Local INTEGER NOT NULL,
-            Name TEXT NOT NULL DEFAULT '',
-            AdlpIndex INTEGER NOT NULL DEFAULT 0,
-            Type INTEGER NOT NULL DEFAULT 1);",
-
-        @"CREATE TABLE IF NOT EXISTS PuDeviceChannels (
-            DeviceId INTEGER NOT NULL,
-            ChannelId INTEGER NOT NULL,
-            Position INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, ChannelId),
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE,
-            FOREIGN KEY (ChannelId) REFERENCES PuChannels(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS PuGroups (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            Local INTEGER NOT NULL,
-            AdlpIndex INTEGER NOT NULL DEFAULT 0);",
-
-        @"CREATE TABLE IF NOT EXISTS PuDeviceGroups (
-            DeviceId INTEGER NOT NULL,
-            GroupId INTEGER NOT NULL,
-            Position INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, GroupId),
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE,
-            FOREIGN KEY (GroupId) REFERENCES PuGroups(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS PuGroupChannels (
-            GroupId INTEGER NOT NULL,
-            ChannelAdlpIndex INTEGER NOT NULL,
-            Slot INTEGER NOT NULL,
-            PRIMARY KEY (GroupId, Slot),
-            FOREIGN KEY (GroupId) REFERENCES PuGroups(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS PuPictures (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            Local INTEGER NOT NULL,
-            Name TEXT NOT NULL DEFAULT '');",
-
-        @"CREATE TABLE IF NOT EXISTS PuDevicePictures (
-            DeviceId INTEGER NOT NULL,
-            PictureId INTEGER NOT NULL,
-            Position INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, PictureId),
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE,
-            FOREIGN KEY (PictureId) REFERENCES PuPictures(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS PuButtons (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            Local INTEGER NOT NULL,
-            Page INTEGER NOT NULL DEFAULT 1,
-            LocalChannel INTEGER NOT NULL DEFAULT 0,
-            PosX INTEGER NOT NULL DEFAULT 0,
-            PosY INTEGER NOT NULL DEFAULT 0,
-            Icon INTEGER NOT NULL DEFAULT 0,
-            Color INTEGER NOT NULL DEFAULT 0);",
-
-        @"CREATE TABLE IF NOT EXISTS PuDeviceButtons (
-            DeviceId INTEGER NOT NULL,
-            ButtonId INTEGER NOT NULL,
-            Position INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, ButtonId),
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE,
-            FOREIGN KEY (ButtonId) REFERENCES PuButtons(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS PuButtonChannels (
-            DeviceId INTEGER NOT NULL,
-            ButtonId INTEGER NOT NULL,
-            ChannelLocal INTEGER NOT NULL,
-            PRIMARY KEY (DeviceId, ButtonId),
-            FOREIGN KEY (DeviceId, ButtonId)
-                REFERENCES PuDeviceButtons(DeviceId, ButtonId) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS ExecDevices (
-            DeviceId INTEGER PRIMARY KEY,
-            BaseChannel TEXT NOT NULL DEFAULT '',
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS ExecStreams (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            StreamIndex INTEGER NOT NULL,
-            Protocol TEXT NOT NULL DEFAULT 'нет',
-            Universe INTEGER NOT NULL DEFAULT 0,
-            Address INTEGER NOT NULL DEFAULT 1);",
-
-        @"CREATE TABLE IF NOT EXISTS ExecDeviceStreams (
-            DeviceId INTEGER NOT NULL,
-            StreamId INTEGER NOT NULL,
-            Position INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, StreamId),
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE,
-            FOREIGN KEY (StreamId) REFERENCES ExecStreams(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS ExecChannels (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            Local INTEGER NOT NULL,
-            GlobalIndex INTEGER NOT NULL DEFAULT 0,
-            Name TEXT NOT NULL DEFAULT '',
-            Control TEXT NOT NULL DEFAULT 'adlp',
-            Wide INTEGER NOT NULL DEFAULT 0,
-            Patch INTEGER NOT NULL DEFAULT 0,
-            Preheat INTEGER NOT NULL DEFAULT 0,
-            LimitValue INTEGER NOT NULL DEFAULT 100,
-            Curve INTEGER NOT NULL DEFAULT 0,
-            SwitchDelay INTEGER NOT NULL DEFAULT 0);",
-
-        @"CREATE TABLE IF NOT EXISTS ExecDeviceChannels (
-            DeviceId INTEGER NOT NULL,
-            ChannelId INTEGER NOT NULL,
-            Position INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, ChannelId),
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE,
-            FOREIGN KEY (ChannelId) REFERENCES ExecChannels(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS ExecChannelStreams (
-            DeviceId INTEGER NOT NULL,
-            ChannelId INTEGER NOT NULL,
-            StreamIndex INTEGER NOT NULL,
-            PRIMARY KEY (DeviceId, ChannelId),
-            FOREIGN KEY (DeviceId, ChannelId)
-                REFERENCES ExecDeviceChannels(DeviceId, ChannelId) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS _audit_context (
-            key   TEXT PRIMARY KEY,
-            value TEXT
-        );",
-
-        // ---- NetGate ----
-
-        @"CREATE TABLE IF NOT EXISTS NetGateDevices (
-            DeviceId INTEGER PRIMARY KEY,
-            ConveyorCount INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS NetGateConveyors (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            DeviceId INTEGER NOT NULL,
-            Local INTEGER NOT NULL,
-            SourceAProtocol TEXT NOT NULL DEFAULT 'нет',
-            SourceAUniverse INTEGER NOT NULL DEFAULT 0,
-            SourceBProtocol TEXT NOT NULL DEFAULT 'нет',
-            SourceBUniverse INTEGER NOT NULL DEFAULT 0,
-            SourceCProtocol TEXT NOT NULL DEFAULT 'нет',
-            SourceCUniverse INTEGER NOT NULL DEFAULT 0,
-            DestinationProtocol TEXT NOT NULL DEFAULT 'нет',
-            DestinationUniverse INTEGER NOT NULL DEFAULT 0,
-            SourceSelect INTEGER NOT NULL DEFAULT 0,
-            SumType INTEGER NOT NULL DEFAULT 0,
-            Frequency INTEGER NOT NULL DEFAULT 0,
-            Recordable INTEGER NOT NULL DEFAULT 0,
-            Timeouted INTEGER NOT NULL DEFAULT 0,
-            RdmEnabled INTEGER NOT NULL DEFAULT 0,
-            SumBFrom INTEGER NOT NULL DEFAULT 0,
-            SumBTo INTEGER NOT NULL DEFAULT 255,
-            SumCFrom INTEGER NOT NULL DEFAULT 256,
-            SumCTo INTEGER NOT NULL DEFAULT 511,
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS NetGateChannels (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            DeviceId INTEGER NOT NULL,
-            Local INTEGER NOT NULL,
-            Name TEXT NOT NULL DEFAULT '',
-            AdlpIndex INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE);",
-
-        @"CREATE TABLE IF NOT EXISTS NetGatePictures (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            DeviceId INTEGER NOT NULL,
-            Local INTEGER NOT NULL,
-            Picture INTEGER NOT NULL DEFAULT 0,
-            FadeIn INTEGER NOT NULL DEFAULT 0,
-            FadeOut INTEGER NOT NULL DEFAULT 0,
-            Mux1 INTEGER NOT NULL DEFAULT 0,
-            Mux2 INTEGER NOT NULL DEFAULT 0,
-            Mux3 INTEGER NOT NULL DEFAULT 0,
-            Mux4 INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (DeviceId) REFERENCES Devices(Id) ON DELETE CASCADE);"
-    };
-
-        private static readonly string[] MySqlDdl =
-        {
-        @"CREATE TABLE IF NOT EXISTS Devices (
-            Id          INT AUTO_INCREMENT PRIMARY KEY,
-            Name        VARCHAR(255) NOT NULL DEFAULT '',
-            ConfigType  VARCHAR(10) NOT NULL,
-            DeviceType  VARCHAR(100) NOT NULL DEFAULT '',
-            SID         INT NULL, 
-            Mac         VARCHAR(32) NOT NULL DEFAULT '',
-            Ip          VARCHAR(64) NOT NULL DEFAULT '',
-            Mask        VARCHAR(64) NOT NULL DEFAULT '',
-            Gateway     VARCHAR(64) NOT NULL DEFAULT '',
-            Block       INT NOT NULL DEFAULT 0,
-            CreatedAt   DATETIME     NULL,
-            CreatedBy   VARCHAR(100) NULL,
-            UpdatedAt   DATETIME     NULL,
-            UpdatedBy   VARCHAR(100) NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuDevices (
-            DeviceId INT PRIMARY KEY,
-            Priority INT NOT NULL DEFAULT 5,
-            PictureSwitchTime INT NOT NULL DEFAULT 0,
-            PageCount INT NOT NULL DEFAULT 1,
-            SwapX INT NOT NULL DEFAULT 0,
-            SwapY INT NOT NULL DEFAULT 0,
-            Brightness INT NOT NULL DEFAULT 100,
-            BrightnessSleep INT NOT NULL DEFAULT 100,
-            SleepTimeout INT NOT NULL DEFAULT 0,
-            CONSTRAINT fk_pu_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuChannels (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            Local INT NOT NULL,
-            Name VARCHAR(255) NOT NULL DEFAULT '',
-            AdlpIndex INT NOT NULL DEFAULT 0,
-            Type INT NOT NULL DEFAULT 1
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuDeviceChannels (
-            DeviceId INT NOT NULL,
-            ChannelId INT NOT NULL,
-            Position INT NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, ChannelId),
-            CONSTRAINT fk_pdc_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE,
-            CONSTRAINT fk_pdc_channel FOREIGN KEY (ChannelId)
-                REFERENCES PuChannels(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuGroups (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            Local INT NOT NULL,
-            AdlpIndex INT NOT NULL DEFAULT 0
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuDeviceGroups (
-            DeviceId INT NOT NULL,
-            GroupId INT NOT NULL,
-            Position INT NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, GroupId),
-            CONSTRAINT fk_pdg_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE,
-            CONSTRAINT fk_pdg_group FOREIGN KEY (GroupId)
-                REFERENCES PuGroups(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuGroupChannels (
-            GroupId INT NOT NULL,
-            ChannelAdlpIndex INT NOT NULL,
-            Slot INT NOT NULL,
-            PRIMARY KEY (GroupId, Slot),
-            CONSTRAINT fk_pgc_group FOREIGN KEY (GroupId)
-                REFERENCES PuGroups(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuPictures (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            Local INT NOT NULL,
-            Name VARCHAR(255) NOT NULL DEFAULT ''
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuDevicePictures (
-            DeviceId INT NOT NULL,
-            PictureId INT NOT NULL,
-            Position INT NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, PictureId),
-            CONSTRAINT fk_pdp_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE,
-            CONSTRAINT fk_pdp_picture FOREIGN KEY (PictureId)
-                REFERENCES PuPictures(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuButtons (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            Local INT NOT NULL,
-            Page INT NOT NULL DEFAULT 1,
-            LocalChannel INT NOT NULL DEFAULT 0,
-            PosX INT NOT NULL DEFAULT 0,
-            PosY INT NOT NULL DEFAULT 0,
-            Icon INT NOT NULL DEFAULT 0,
-            Color INT NOT NULL DEFAULT 0
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuDeviceButtons (
-            DeviceId INT NOT NULL,
-            ButtonId INT NOT NULL,
-            Position INT NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, ButtonId),
-            CONSTRAINT fk_pdb_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE,
-            CONSTRAINT fk_pdb_button FOREIGN KEY (ButtonId)
-                REFERENCES PuButtons(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS PuButtonChannels (
-            DeviceId INT NOT NULL,
-            ButtonId INT NOT NULL,
-            ChannelLocal INT NOT NULL,
-            PRIMARY KEY (DeviceId, ButtonId),
-            CONSTRAINT fk_pbc_button FOREIGN KEY (DeviceId, ButtonId)
-                REFERENCES PuDeviceButtons(DeviceId, ButtonId) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS ExecDevices (
-            DeviceId INT PRIMARY KEY,
-            BaseChannel VARCHAR(255) NOT NULL DEFAULT '',
-            CONSTRAINT fk_exec_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS ExecStreams (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            StreamIndex INT NOT NULL,
-            Protocol VARCHAR(50) NOT NULL DEFAULT 'нет',
-            Universe INT NOT NULL DEFAULT 0,
-            Address INT NOT NULL DEFAULT 1
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS ExecDeviceStreams (
-            DeviceId INT NOT NULL,
-            StreamId INT NOT NULL,
-            Position INT NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, StreamId),
-            CONSTRAINT fk_eds_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE,
-            CONSTRAINT fk_eds_stream FOREIGN KEY (StreamId)
-                REFERENCES ExecStreams(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS ExecChannels (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            Local INT NOT NULL,
-            GlobalIndex INT NOT NULL DEFAULT 0,
-            Name VARCHAR(255) NOT NULL DEFAULT '',
-            Control VARCHAR(20) NOT NULL DEFAULT 'adlp',
-            Wide TINYINT(1) NOT NULL DEFAULT 0,
-            Patch INT NOT NULL DEFAULT 0,
-            Preheat INT NOT NULL DEFAULT 0,
-            LimitValue INT NOT NULL DEFAULT 100,
-            Curve INT NOT NULL DEFAULT 0,
-            SwitchDelay INT NOT NULL DEFAULT 0
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS ExecDeviceChannels (
-            DeviceId INT NOT NULL,
-            ChannelId INT NOT NULL,
-            Position INT NOT NULL DEFAULT 0,
-            PRIMARY KEY (DeviceId, ChannelId),
-            CONSTRAINT fk_edc_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE,
-            CONSTRAINT fk_edc_channel FOREIGN KEY (ChannelId)
-                REFERENCES ExecChannels(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS ExecChannelStreams (
-            DeviceId INT NOT NULL,
-            ChannelId INT NOT NULL,
-            StreamIndex INT NOT NULL,
-            PRIMARY KEY (DeviceId, ChannelId),
-            CONSTRAINT fk_ecs_dc FOREIGN KEY (DeviceId, ChannelId)
-                REFERENCES ExecDeviceChannels(DeviceId, ChannelId) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        // ---- NetGate ----
-
-        @"CREATE TABLE IF NOT EXISTS NetGateDevices (
-            DeviceId INT PRIMARY KEY,
-            ConveyorCount INT NOT NULL DEFAULT 0,
-            CONSTRAINT fk_ng_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS NetGateConveyors (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            DeviceId INT NOT NULL,
-            Local INT NOT NULL,
-            SourceAProtocol VARCHAR(50) NOT NULL DEFAULT 'нет',
-            SourceAUniverse INT NOT NULL DEFAULT 0,
-            SourceBProtocol VARCHAR(50) NOT NULL DEFAULT 'нет',
-            SourceBUniverse INT NOT NULL DEFAULT 0,
-            SourceCProtocol VARCHAR(50) NOT NULL DEFAULT 'нет',
-            SourceCUniverse INT NOT NULL DEFAULT 0,
-            DestinationProtocol VARCHAR(50) NOT NULL DEFAULT 'нет',
-            DestinationUniverse INT NOT NULL DEFAULT 0,
-            SourceSelect INT NOT NULL DEFAULT 0,
-            SumType INT NOT NULL DEFAULT 0,
-            Frequency INT NOT NULL DEFAULT 0,
-            Recordable TINYINT(1) NOT NULL DEFAULT 0,
-            Timeouted TINYINT(1) NOT NULL DEFAULT 0,
-            RdmEnabled TINYINT(1) NOT NULL DEFAULT 0,
-            SumBFrom INT NOT NULL DEFAULT 0,
-            SumBTo INT NOT NULL DEFAULT 255,
-            SumCFrom INT NOT NULL DEFAULT 256,
-            SumCTo INT NOT NULL DEFAULT 511,
-            CONSTRAINT fk_ngc_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS NetGateChannels (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            DeviceId INT NOT NULL,
-            Local INT NOT NULL,
-            Name VARCHAR(255) NOT NULL DEFAULT '',
-            AdlpIndex INT NOT NULL DEFAULT 0,
-            CONSTRAINT fk_ngch_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
-
-        @"CREATE TABLE IF NOT EXISTS NetGatePictures (
-            Id INT AUTO_INCREMENT PRIMARY KEY,
-            DeviceId INT NOT NULL,
-            Local INT NOT NULL,
-            Picture INT NOT NULL DEFAULT 0,
-            FadeIn INT NOT NULL DEFAULT 0,
-            FadeOut INT NOT NULL DEFAULT 0,
-            Mux1 INT NOT NULL DEFAULT 0,
-            Mux2 INT NOT NULL DEFAULT 0,
-            Mux3 INT NOT NULL DEFAULT 0,
-            Mux4 INT NOT NULL DEFAULT 0,
-            CONSTRAINT fk_ngp_device FOREIGN KEY (DeviceId)
-                REFERENCES Devices(Id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
-    };
     }
 }

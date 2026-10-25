@@ -21,6 +21,8 @@ namespace AdlpdsConfig.Controls
 
             string typeCode = cfg switch
             {
+                Dimmer220ConfigDto => "DIM220",
+                DimmerCabinetConfigDto => "DIMCABINET",
                 ExecConfigDto => "EXEC",
                 PuColorConfigDto => "PU",
                 _ => cfg.GetType().Name

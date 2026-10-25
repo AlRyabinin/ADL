@@ -1,6 +1,8 @@
 ﻿using AdlpLib.Models.Devices;
 using AdlpLib.Models.DevicesGroup;
+using AdlpLib.Persistence;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
@@ -49,20 +51,22 @@ namespace AdlpLib.Configuration.Application
         //  СХЕМА
         // =========================================================================
 
-        public async Task EnsureSchemaAsync(CancellationToken ct = default)
+        public async Task EnsureSchemaAsync(
+            CancellationToken ct = default)
         {
-            await using var conn = await OpenConnectionAsync(ct).ConfigureAwait(false);
+            await using var db =
+                AdlpDbContextFactory.Create(_connectionString, _dbType);
 
-            foreach(var ddl in GetDdlBatches())
-            {
-                await using var cmd = conn.CreateCommand();
-                cmd.CommandText = ddl;
-                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
+            await AdlpDatabaseInitializer
+                .ApplyPendingMigrationsAsync(db, ct);
 
-            await ValidateSchemaAsync(conn, ct).ConfigureAwait(false);
-            await EnsureAuditColumnsAsync(conn, ct).ConfigureAwait(false);
-            await EnsureAuditTriggersAsync(conn, ct).ConfigureAwait(false);
+            await db.Database.OpenConnectionAsync(ct);
+
+            var conn = db.Database.GetDbConnection();
+
+            await ValidateSchemaAsync(conn, ct);
+            await EnsureAuditColumnsAsync(conn, ct);
+            await EnsureAuditTriggersAsync(conn, ct);
         }
 
         private async Task EnsureAuditColumnsAsync(DbConnection conn, CancellationToken ct)

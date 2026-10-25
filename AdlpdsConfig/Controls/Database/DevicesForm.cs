@@ -204,9 +204,12 @@ namespace AdlpdsConfig.Controls.Database
             e.FormattingApplied = true;
         }
 
-        internal static string DisplayTypeName(string configType) => configType switch
+        internal static string DisplayTypeName(string configType) =>
+            configType switch
         {
             "EXEC" => "IKB",
+            "DIM220" => "DIM220",
+            "DIMCABINET" => "Dimmer cabinet",
             "PU" => "PU",
             _ => configType
         };

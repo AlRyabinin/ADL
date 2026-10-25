@@ -8,5 +8,6 @@
         string Mask { get; set; }
         string Gateway { get; set; }
         int Block { get; set; }
+        string MulticastAdress { get; set; }
     }
 }

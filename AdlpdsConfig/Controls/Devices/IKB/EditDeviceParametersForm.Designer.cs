@@ -65,7 +65,7 @@ namespace AdlpdsConfig.Controls.Devices
             // 
             // SaveButton
             // 
-            SaveButton.Location = new Point(465, 472);
+            SaveButton.Location = new Point(411, 472);
             SaveButton.Name = "SaveButton";
             SaveButton.Size = new Size(75, 23);
             SaveButton.TabIndex = 2;
@@ -75,7 +75,7 @@ namespace AdlpdsConfig.Controls.Devices
             // 
             // MacTextBox
             // 
-            MacTextBox.Location = new Point(12, 71);
+            MacTextBox.Location = new Point(254, 27);
             MacTextBox.Name = "MacTextBox";
             MacTextBox.Size = new Size(236, 23);
             MacTextBox.TabIndex = 3;
@@ -83,7 +83,7 @@ namespace AdlpdsConfig.Controls.Devices
             // 
             // IpTextBox
             // 
-            IpTextBox.Location = new Point(12, 115);
+            IpTextBox.Location = new Point(254, 71);
             IpTextBox.Name = "IpTextBox";
             IpTextBox.Size = new Size(236, 23);
             IpTextBox.TabIndex = 4;
@@ -92,7 +92,7 @@ namespace AdlpdsConfig.Controls.Devices
             // label2
             // 
             label2.AutoSize = true;
-            label2.Location = new Point(12, 53);
+            label2.Location = new Point(254, 9);
             label2.Name = "label2";
             label2.Size = new Size(33, 15);
             label2.TabIndex = 5;
@@ -100,7 +100,7 @@ namespace AdlpdsConfig.Controls.Devices
             // 
             // MaskTextBox
             // 
-            MaskTextBox.Location = new Point(12, 159);
+            MaskTextBox.Location = new Point(254, 115);
             MaskTextBox.Name = "MaskTextBox";
             MaskTextBox.Size = new Size(236, 23);
             MaskTextBox.TabIndex = 6;
@@ -109,7 +109,7 @@ namespace AdlpdsConfig.Controls.Devices
             // label3
             // 
             label3.AutoSize = true;
-            label3.Location = new Point(12, 97);
+            label3.Location = new Point(254, 53);
             label3.Name = "label3";
             label3.Size = new Size(20, 15);
             label3.TabIndex = 7;
@@ -118,7 +118,7 @@ namespace AdlpdsConfig.Controls.Devices
             // label4
             // 
             label4.AutoSize = true;
-            label4.Location = new Point(12, 141);
+            label4.Location = new Point(254, 97);
             label4.Name = "label4";
             label4.Size = new Size(38, 15);
             label4.TabIndex = 8;
@@ -130,7 +130,7 @@ namespace AdlpdsConfig.Controls.Devices
             MainDataGridView.Dock = DockStyle.Fill;
             MainDataGridView.Location = new Point(3, 3);
             MainDataGridView.Name = "MainDataGridView";
-            MainDataGridView.Size = new Size(514, 244);
+            MainDataGridView.Size = new Size(464, 244);
             MainDataGridView.TabIndex = 9;
             // 
             // tablesTab
@@ -139,7 +139,7 @@ namespace AdlpdsConfig.Controls.Devices
             tablesTab.Location = new Point(12, 188);
             tablesTab.Name = "tablesTab";
             tablesTab.SelectedIndex = 0;
-            tablesTab.Size = new Size(528, 278);
+            tablesTab.Size = new Size(478, 278);
             tablesTab.TabIndex = 10;
             // 
             // tabPage1
@@ -148,7 +148,7 @@ namespace AdlpdsConfig.Controls.Devices
             tabPage1.Location = new Point(4, 24);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(3);
-            tabPage1.Size = new Size(520, 250);
+            tabPage1.Size = new Size(470, 250);
             tabPage1.TabIndex = 0;
             tabPage1.Text = "Каналы";
             tabPage1.UseVisualStyleBackColor = true;
@@ -167,7 +167,7 @@ namespace AdlpdsConfig.Controls.Devices
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(552, 507);
+            ClientSize = new Size(500, 507);
             Controls.Add(CancelButton);
             Controls.Add(tablesTab);
             Controls.Add(label4);

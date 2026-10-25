@@ -137,33 +137,40 @@ namespace AdlpdsConfig.Controls.Devices
                 case "IKB":
                 case "DIM220":
                 case "Dimmer cabinet":
-                {
-                    var exec = new ExecConfigDto
                     {
-                        Channels = new List<LiveChannelCfg>(channelCount)
-                    };
-
-                    for(int i = 1; i <= channelCount; i++)
-                    {
-                        exec.Channels.Add(new LiveChannelCfg
+                        ExecConfigDto exec = SelectedType switch
                         {
-                            Local = i,
-                            GlobalIndex = i,      
-                            Name = $"Канал {i}",
-                            Control = "adlp",
-                            Wide = false,
-                            StreamId = 0,
-                            Patch = 0,
-                            Preheat = 0,
-                            Limit = 100,
-                            Curve = 0,
-                            SwitchDelay = 0
-                        });
-                    }
+                            "IKB" => new IkbConfigDto(),
+                            "DIM220" => new Dimmer220ConfigDto(),
+                            "Dimmer cabinet" => new DimmerCabinetConfigDto(),
+                            _ => throw new InvalidOperationException(
+                                $"Неизвестный тип устройства: {SelectedType}")
+                        };
 
-                    CreatedDevice = exec;
-                    break;
-                }
+                        exec.Channels = new List<LiveChannelCfg>(channelCount);
+                        exec.Streams = new List<LiveStreamCfg>();
+
+                        for(int i = 1; i <= channelCount; i++)
+                        {
+                            exec.Channels.Add(new LiveChannelCfg
+                            {
+                                Local = i,
+                                GlobalIndex = i,
+                                Name = $"Канал {i}",
+                                Control = "adlp",
+                                Wide = false,
+                                StreamId = 0,
+                                Patch = 0,
+                                Preheat = 0,
+                                Limit = 100,
+                                Curve = 0,
+                                SwitchDelay = 0
+                            });
+                        }
+
+                        CreatedDevice = exec;
+                        break;
+                    }
                 case "NetGate":
                 {
                     var netGate = new NetGateConfigDto

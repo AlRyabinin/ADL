@@ -9,9 +9,11 @@ namespace AdlpLib.Models.Devices
     [JsonDerivedType(typeof(Pu6ConfigDto), "PU 6")]
     [JsonDerivedType(typeof(PuBWConfigDto), "PU black-and-white")]
     [JsonDerivedType(typeof(PuColorConfigDto), "PU color")]
+    [JsonDerivedType(typeof(IkbConfigDto), "IKB")]
+    [JsonDerivedType(typeof(Dimmer220ConfigDto), "DIM220")]
+    [JsonDerivedType(typeof(DimmerCabinetConfigDto), "DIMCABINET")]
     [JsonDerivedType(typeof(ExecConfigDto), "EXEC")]
     [JsonDerivedType(typeof(NetGateConfigDto), "NETGATE")]
-    //дописывать новые
     public abstract class DeviceConfigDtoBase : IDeviceCommon
     {
         /// <summary>Идентификатор устройства в БД. Присваивается при сохранении.</summary>
@@ -27,7 +29,10 @@ namespace AdlpLib.Models.Devices
             nameof(Pu6ConfigDto) => "Pu 6",
             nameof(PuBWConfigDto) => "Pu black-and-white",
             nameof(PuColorConfigDto) => "Pu color",
-            nameof(ExecConfigDto) => "Exec",
+            nameof(IkbConfigDto) => "IKB",
+            nameof(Dimmer220ConfigDto) => "DIM220",
+            nameof(DimmerCabinetConfigDto) => "Dimmer cabinet",
+            nameof(ExecConfigDto) => "IKB",
             nameof(NetGateConfigDto) => "NetGate",
             _ => "unknown"
         };
@@ -49,5 +54,8 @@ namespace AdlpLib.Models.Devices
 
         [JsonPropertyOrder(7)]
         public int Block { get; set; }
+
+        [JsonPropertyOrder(8)]
+        public string MulticastAdress { get; set; } = string.Empty;
     }
 }
