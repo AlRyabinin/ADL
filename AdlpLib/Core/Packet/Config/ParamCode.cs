@@ -78,6 +78,8 @@ namespace AdlpLib.Core.Packet.Config
         DeviceSleepTimeout      = 125,  // U16
         DeviceAcnVersion        = 126,  // U8
         DeviceTargetTemperature = 127,  // U8
+        DeviceStatusTransport = 128,          // U8: 0 — broadcast, 1 — multicast
+        DeviceStatusMulticastAddress = 129,   // U32: адрес группы статусов
 
         GateConveyorRecordable  = 150,  // U8
         GateConveyorSourceA     = 151,  // U32
@@ -92,6 +94,8 @@ namespace AdlpLib.Core.Packet.Config
         GateConveyorSumCTo      = 160,  // U16
 
         PixelgateLineName       = 180,  // STR[6]
+
+        IgmpAddress = 200,                      // U32: адрес IGMP-подписки
 
         GroupChannelStart       = 1000, // U16
         GroupChannelEnd         = 1100, // U16

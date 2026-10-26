@@ -54,8 +54,5 @@ namespace AdlpLib.Models.Devices
 
         [JsonPropertyOrder(7)]
         public int Block { get; set; }
-
-        [JsonPropertyOrder(8)]
-        public string MulticastAdress { get; set; } = string.Empty;
     }
 }

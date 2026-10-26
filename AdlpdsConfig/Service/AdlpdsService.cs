@@ -34,6 +34,17 @@ namespace AdlpdsConfig.Service
         /// </summary>
         public static string BackupsDir => Path.Combine(AppContext.BaseDirectory, "backups");
 
+        public sealed class MulticastSettings
+        {
+            public byte Transport { get; set; } = 0;
+
+            public string OwnAddress { get; set; } = "";
+
+            public List<string> Subscriptions { get; set; } = new();
+        }
+
+        public const int MaxIgmpSlots = 32;
+
         public AdlpdsService(Net N, int Block = 1)
         {
             Cfg = new Configurator(N, CreateGuid("CFG", 1));
@@ -477,6 +488,104 @@ namespace AdlpdsConfig.Service
 
             return Live.WriteParameters(device.Endpoint, LiveConfigCodec.BuildGateWriteFields(config),
                 (fields, ok) => done(device, ok));
+        }
+
+        public bool ReadMulticast(Device device, Action<Device, MulticastSettings, bool> done)
+        {
+            var items = new List<GetParamItem>
+            {
+                new(new ParamDataId(ObjectCode.PARAM_OBJECT_DEVICE, 0, 0, ParamCode.DeviceStatusTransport), ParamDataType.PARAM_DATA_TYPE_U8),
+                new(new ParamDataId(ObjectCode.PARAM_OBJECT_DEVICE, 0, 0, ParamCode.DeviceStatusMulticastAddress), ParamDataType.PARAM_DATA_TYPE_U32)
+            };
+
+            for(int i = 1; i <= MaxIgmpSlots; i++)
+                items.Add(new GetParamItem(new ParamDataId(ObjectCode.PARAM_OBJECT_IGMP, 0, i, ParamCode.IgmpAddress), ParamDataType.PARAM_DATA_TYPE_U32));
+
+            return Live.ReadParametersSequential(device.Endpoint, items.ToArray(), (fields, ok) =>
+            {
+                var result = new MulticastSettings();
+
+                if(ok && (fields != null))
+                {
+                    foreach(var field in fields)
+                    {
+                        if(field.Id.ObjectType == ObjectCode.PARAM_OBJECT_DEVICE)
+                        {
+                            if(field.Id.Param == ParamCode.DeviceStatusTransport)
+                                result.Transport = (byte)field.Value.GetU8Value();
+                            else if(field.Id.Param == ParamCode.DeviceStatusMulticastAddress)
+                            {
+                                uint address = field.Value.GetU32Value();
+
+                                if(address != 0)
+                                    result.OwnAddress = U32ToIp(address);
+                            }
+                        }
+                        else if((field.Id.ObjectType == ObjectCode.PARAM_OBJECT_IGMP) &&
+                                 (field.Id.Param == ParamCode.IgmpAddress))
+                        {
+                            uint address = field.Value.GetU32Value();
+
+                            if(address != 0)
+                                result.Subscriptions.Add(U32ToIp(address));
+                        }
+                    }
+                }
+
+                done?.Invoke(device, result, ok);
+            });
+        }
+
+        public void WriteMulticast(Device device, MulticastSettings cfg)
+        {
+            var fields = new List<ParamDataField>
+            {
+                new(
+                    new ParamDataId(
+                        ObjectCode.PARAM_OBJECT_DEVICE, 0, 0,
+                        ParamCode.DeviceStatusTransport),
+                    new ParamDataValue(cfg.Transport)),
+
+                new(
+                    new ParamDataId(
+                        ObjectCode.PARAM_OBJECT_DEVICE, 0, 0,
+                        ParamCode.DeviceStatusMulticastAddress),
+                    new ParamDataValue(
+                        MulticastIpToU32(cfg.OwnAddress)))
+            };
+
+            for(int i = 1; i <= MaxIgmpSlots; i++)
+            {
+                string address = i <= cfg.Subscriptions.Count
+                    ? cfg.Subscriptions[i - 1]
+                    : "";
+
+                fields.Add(new ParamDataField(
+                    new ParamDataId(
+                        ObjectCode.PARAM_OBJECT_IGMP, 0, i,
+                        ParamCode.IgmpAddress),
+                    new ParamDataValue(
+                        MulticastIpToU32(address))));
+            }
+
+            Cfg.Config.SetParameters(device.Endpoint, fields.ToArray());
+        }
+
+        private static uint MulticastIpToU32(string s)
+        {
+            if(string.IsNullOrWhiteSpace(s) ||
+                !IPAddress.TryParse(s.Trim(), out var ip))
+                return 0;
+
+            var raw = ip.GetAddressBytes();
+
+            if(raw.Length != 4)
+                return 0;
+
+            return (uint)raw[0] << 24 |
+                   (uint)raw[1] << 16 |
+                   (uint)raw[2] << 8 |
+                   raw[3];
         }
     }
 }

@@ -218,7 +218,6 @@ END;", ct).ConfigureAwait(false);
                 long deviceId = device.Id;
 
                 await DeleteDependentsAsync(db, deviceId, ct).ConfigureAwait(false);
-                await SaveMulticastAddressAsync(db, deviceId, dto.MulticastAdress, ct).ConfigureAwait(false);
 
                 switch(dto)
                 {
@@ -258,29 +257,6 @@ END;", ct).ConfigureAwait(false);
             entity.Mask = dto.Mask ?? string.Empty;
             entity.Gateway = dto.Gateway ?? string.Empty;
             entity.Block = dto.Block;
-        }
-
-        private static async Task SaveMulticastAddressAsync(
-            AdlpDbContext db, long deviceId, string? address, CancellationToken ct)
-        {
-            var row = await db.DeviceMulticastAddresses
-                .SingleOrDefaultAsync(x => x.DeviceId == deviceId, ct)
-                .ConfigureAwait(false);
-
-            if(row == null)
-            {
-                db.DeviceMulticastAddresses.Add(new DeviceMulticastAddressEntity
-                {
-                    DeviceId = deviceId,
-                    MultiCastAdress = address?.Trim() ?? string.Empty
-                });
-            }
-            else
-            {
-                row.MultiCastAdress = address?.Trim() ?? string.Empty;
-            }
-
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
 
         private static async Task SavePuDependentsAsync(
@@ -610,12 +586,6 @@ END;", ct).ConfigureAwait(false);
                 _ => throw new NotSupportedException($"Неизвестный ConfigType: '{device.ConfigType}'.")
             };
 
-            dto.MulticastAdress = await db.DeviceMulticastAddresses.AsNoTracking()
-                .Where(x => x.DeviceId == deviceId)
-                .Select(x => x.MultiCastAdress)
-                .FirstOrDefaultAsync(ct)
-                .ConfigureAwait(false) ?? string.Empty;
-
             return dto;
         }
 
@@ -918,8 +888,6 @@ END;", ct).ConfigureAwait(false);
             try
             {
                 await DeleteDependentsAsync(db, deviceId, ct).ConfigureAwait(false);
-                await db.DeviceMulticastAddresses.Where(x => x.DeviceId == deviceId)
-                    .ExecuteDeleteAsync(ct).ConfigureAwait(false);
 
                 var device = await db.Devices.SingleOrDefaultAsync(x => x.Id == deviceId, ct)
                     .ConfigureAwait(false);
@@ -955,7 +923,6 @@ END;", ct).ConfigureAwait(false);
                 string[] tables =
                 {
                     "DeviceGroupDevices", "DeviceGroups",
-                    "DeviceMulticastAddresses",
                     "NetGatePictures", "NetGateChannels", "NetGateConveyors", "NetGateDevices",
                     "ExecChannelStreams", "ExecDeviceChannels", "ExecChannels",
                     "ExecDeviceStreams", "ExecStreams", "ExecDevices",

@@ -33,7 +33,6 @@ public sealed class AdlpDbContext : DbContext
     public DbSet<NetGatePictureEntity> NetGatePictures => Set<NetGatePictureEntity>();
     public DbSet<DeviceGroupEntity> DeviceGroups => Set<DeviceGroupEntity>();
     public DbSet<DeviceGroupDeviceEntity> DeviceGroupDevices => Set<DeviceGroupDeviceEntity>();
-    public DbSet<DeviceMulticastAddressEntity> DeviceMulticastAddresses => Set<DeviceMulticastAddressEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -71,23 +70,6 @@ public sealed class AdlpDbContext : DbContext
             entity.Property(e => e.Block).HasDefaultValue(0);
             entity.Property(e => e.CreatedBy).HasMaxLength(100);
             entity.Property(e => e.UpdatedBy).HasMaxLength(100);
-        });
-
-        modelBuilder.Entity<DeviceMulticastAddressEntity>(entity =>
-        {
-            entity.ToTable("DeviceMulticastAddresses");
-
-            entity.HasKey(x => x.DeviceId);
-
-            entity.Property(x => x.MultiCastAdress)
-                .IsRequired()
-                .HasMaxLength(64)
-                .HasDefaultValue("");
-
-            entity.HasOne<DeviceEntity>()
-                .WithMany()
-                .HasForeignKey(x => x.DeviceId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PuDeviceEntity>(entity =>

@@ -21,7 +21,7 @@ namespace AdlpLib.Configuration.Application
         /// Серверная база данных MySQL.
         /// </summary>
         MySQL
-        // Позже: SqlServer, PostgreSql, MySql...
+        // Позже: SqlServer, PostgreSql
     }
 
     /// <summary>
