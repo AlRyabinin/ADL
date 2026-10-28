@@ -18,6 +18,7 @@ namespace AdlpLib.Core
         COMMAND_EVENTS           = 7,
         COMMAND_BACKUP_CMD       = 8,
         COMMAND_BACKUP_DATA      = 9,
-        COMMAND_CH_SWITCH_EX     = 10
+        COMMAND_CH_SWITCH_EX     = 10,
+        COMMAND_GET_STATUS = 11
     }
 }

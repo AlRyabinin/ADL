@@ -32,7 +32,7 @@ namespace AdlpLib.Core
 
 		internal const int ADLPDS_DEFAULT_PORT = 20000;
 
-		internal const int DEVICE_TIMEOUT = 10000;
+		internal const int DEVICE_TIMEOUT = 20000;
 
 		internal const int STREAM_TIMEOUT = 4000;
 

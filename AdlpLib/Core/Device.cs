@@ -80,7 +80,7 @@ namespace AdlpLib.Core
         /// </summary>
         /// <param name="Time">Текущее время</param>
         /// <returns>true, если более неактивно</returns>
-        public bool IsTimeouted(long Time) => (Time - LastActivity) > 5000;
+        public bool IsTimeouted(long Time) => (Time - LastActivity) > Config.DEVICE_TIMEOUT;
 
         /// <summary>
         /// Это оно же?

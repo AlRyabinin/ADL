@@ -57,6 +57,7 @@ namespace AdlpdsConfig
             miSetUuid.Enabled = false;
             miBackup.Enabled = false;
             miFirmware.Enabled = false;
+            miMulticastConfiguration.Enabled = false;
 
             InitService();
         }
@@ -107,7 +108,7 @@ namespace AdlpdsConfig
         }
 
         /// <summary>Идентификатор устройства для списка: адрес уникален и стабилен, в отличие от UUID</summary>
-        private static string EndpointKey(Device d) => d.Endpoint?.ToString() ?? "";
+        private static string EndpointKey(Device d) => $"{d.Endpoint}|{d.Uuid:N}|{d.Block}";
 
         private string GetSelectedDeviceKey()
         {
@@ -132,6 +133,7 @@ namespace AdlpdsConfig
             miSetName.Enabled = enabled;
             miSetUuid.Enabled = enabled;
             miFirmware.Enabled = enabled;
+            miMulticastConfiguration.Enabled = enabled;
             UpdateBackupButton();
         }
 
@@ -343,7 +345,7 @@ namespace AdlpdsConfig
                     _appConfig.DatabaseType);
 
                 _repo ??= new DeviceConfigRepository(
-                    AppConfigService.BuildConnectionString(_appConfig), 
+                    AppConfigService.BuildConnectionString(_appConfig),
                     _appConfig.DatabaseType);
 
                 await _devicesGroupRepository.EnsureSchemaAsync();
@@ -358,11 +360,11 @@ namespace AdlpdsConfig
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
                     if(answer != DialogResult.Yes)
-                        return; 
+                        return;
 
                     string name = AskGroupName("");
                     if(string.IsNullOrWhiteSpace(name))
-                        return; 
+                        return;
 
                     await _devicesGroupRepository.SaveAsync(new DevicesGroupDto { Name = name });
                 }
@@ -615,7 +617,21 @@ namespace AdlpdsConfig
             {
                 if(item.Tag is not string devKey) continue;
                 var dev = devices.FirstOrDefault(ds => EndpointKey(ds) == devKey);
-                if(dev == null) continue;
+                if(dev == null)
+                    continue;
+
+                // Обновляем данные строки по текущему состоянию устройства.
+                string currentType = dev.Name ?? "";
+                if(item.Text != currentType)
+                    item.Text = currentType;
+
+                string currentBlock = dev.Block.ToString();
+                if(item.SubItems[1].Text != currentBlock)
+                    item.SubItems[1].Text = currentBlock;
+
+                string currentIp = dev.Endpoint?.Address?.ToString() ?? "";
+                if(item.SubItems[2].Text != currentIp)
+                    item.SubItems[2].Text = currentIp;
 
                 // При смене UUID устройства переносим его пресеты на новый идентификатор
                 var dbKey = DbKey(dev);
@@ -774,6 +790,15 @@ namespace AdlpdsConfig
                     $"Не удалось удалить таблицы:\n{ex.Message}",
                     "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-        }        
+        }
+
+        private void MulticastToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            var device = GetSelectedDevice();
+
+            using var form = new fMulticastEditor(Svc, device);
+
+            form.ShowDialog(this);
+        }
     }
 }

@@ -26,6 +26,8 @@ partial class fMain : Form
         miEditor = new ToolStripMenuItem();
         miSaveConfiguration = new ToolStripMenuItem();
         miLoadConfiguration = new ToolStripMenuItem();
+        miMulticastConfiguration = new ToolStripMenuItem();
+        miDevicesGroup = new ToolStripMenuItem();
         miSetMac = new ToolStripMenuItem();
         miSetNet = new ToolStripMenuItem();
         miSetName = new ToolStripMenuItem();
@@ -43,7 +45,6 @@ partial class fMain : Form
         lvCUUID = new ColumnHeader();
         lvCPreset = new ColumnHeader();
         lvCBackup = new ColumnHeader();
-        miDevicesGroup = new ToolStripMenuItem();
         msMain.SuspendLayout();
         statusStrip1.SuspendLayout();
         SuspendLayout();
@@ -107,7 +108,7 @@ partial class fMain : Form
         // 
         // miDevice
         // 
-        miDevice.DropDownItems.AddRange(new ToolStripItem[] { miEditor, miSaveConfiguration, miLoadConfiguration, miDevicesGroup, miSetMac, miSetNet, miSetName, miSetUuid, miFirmware, miBackup, miResetBackup });
+        miDevice.DropDownItems.AddRange(new ToolStripItem[] { miEditor, miSaveConfiguration, miLoadConfiguration, miMulticastConfiguration, miDevicesGroup, miSetMac, miSetNet, miSetName, miSetUuid, miFirmware, miBackup, miResetBackup });
         miDevice.Name = "miDevice";
         miDevice.Size = new Size(82, 20);
         miDevice.Text = "Устройство";
@@ -134,6 +135,20 @@ partial class fMain : Form
         miLoadConfiguration.Size = new Size(302, 22);
         miLoadConfiguration.Text = "Загрузить конфигурацию";
         miLoadConfiguration.Click += miLoadConfiguration_Click;
+        // 
+        // miMulticastConfiguration
+        // 
+        miMulticastConfiguration.Name = "miMulticastConfiguration";
+        miMulticastConfiguration.Size = new Size(302, 22);
+        miMulticastConfiguration.Text = "Мультикаст";
+        miMulticastConfiguration.Click += MulticastToolStripMenuItem_Click;
+        // 
+        // miDevicesGroup
+        // 
+        miDevicesGroup.Name = "miDevicesGroup";
+        miDevicesGroup.Size = new Size(302, 22);
+        miDevicesGroup.Text = "Группа устройств";
+        miDevicesGroup.Click += miDevicesGroup_Click;
         // 
         // miSetMac
         // 
@@ -254,13 +269,6 @@ partial class fMain : Form
         lvCBackup.Text = "Backup";
         lvCBackup.Width = 55;
         // 
-        // miDevicesGroup
-        // 
-        miDevicesGroup.Name = "miDevicesGroup";
-        miDevicesGroup.Size = new Size(302, 22);
-        miDevicesGroup.Text = "Группа устройств";
-        miDevicesGroup.Click += miDevicesGroup_Click;
-        // 
         // fMain
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
@@ -313,4 +321,5 @@ partial class fMain : Form
     private ToolStripMenuItem bdOpen;
     private ToolStripMenuItem bdDelete;
     private ToolStripMenuItem miDevicesGroup;
+    private ToolStripMenuItem miMulticastConfiguration;
 }

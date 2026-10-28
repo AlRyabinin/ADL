@@ -33,6 +33,28 @@ namespace AdlpLib.Core
             return null;
         }
 
+        public Device GetDevice(IPEndPoint endpoint, Guid uuid, int block)
+        {
+            if(uuid != Guid.Empty)
+            {
+                var device = Devices.FirstOrDefault(d =>
+                    d.Uuid == uuid &&
+                    d.Block == block);
+
+                if(device != null)
+                    return device;
+
+                return Devices.FirstOrDefault(d =>
+                    d.Uuid == Guid.Empty &&
+                    d.Block == block &&
+                    d.CheckAddress(endpoint));
+            }
+
+            return Devices.FirstOrDefault(d =>
+                d.CheckAddress(endpoint) &&
+                d.Block == block);
+        }
+
         /// <summary>
         /// Получить информацию об устройстве по названию и номеру блока
         /// </summary>

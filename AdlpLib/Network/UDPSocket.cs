@@ -205,18 +205,23 @@ namespace Network
 
         private void ProcessReceive(IAsyncResult R, UdpState S)
         {
-            Byte[] data = null;
+            byte[] data = null;
             bool NeedReceive = true;
+
+            // Адрес должен быть локальным для конкретного пакета,
+            // а не храниться в общем S.e.
+            IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
 
             try
             {
-                if (S.u != null)
+                if(S.u != null)
                 {
-                    lock (Locker)
+                    lock(Locker)
                     {
-                        data = S.u.EndReceive(R, ref S.e);
+                        data = S.u.EndReceive(R, ref remoteEP);
                     }
-                    if (S.StopRequest)
+
+                    if(S.StopRequest)
                     {
                         S.u.Close();
                         NeedReceive = false;
@@ -224,20 +229,19 @@ namespace Network
                     else
                     {
                         NeedReceive = false;
+
+                        // Запускаем приём следующего пакета.
                         StartNextReceive(S);
 
-                        if (data != null) 
-                            fireOnPacket(S.e as IPEndPoint, data);
+                        // Передаём данные вместе с адресом ИМЕННО этого пакета.
+                        if(data != null)
+                            fireOnPacket(remoteEP, data);
                     }
                 }
             }
-           /* catch (ObjectDisposedException E)
+            catch(Exception E)
             {
-                Debug.WriteLine("UDPSocket: " + E.Message);
-            }*/
-            catch (Exception E)
-            {
-                Debug.WriteLine("UDPSocket: " + E.Message);
+                Debug.WriteLine($"UDPSocket: {E}");
             }
 
             if(NeedReceive)
