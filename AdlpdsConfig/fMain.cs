@@ -792,13 +792,76 @@ namespace AdlpdsConfig
             }
         }
 
-        private void MulticastToolStripMenuItem_Click(object sender, EventArgs e)
+        private async void MulticastToolStripMenuItem_Click(
+    object sender, EventArgs e)
         {
             var device = GetSelectedDevice();
 
-            using var form = new fMulticastEditor(Svc, device);
+            if(device == null)
+                return;
 
-            form.ShowDialog(this);
+            if(_repo == null)
+            {
+                MessageBox.Show(
+                    "Нет подключения к базе данных.",
+                    Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                var macTask = new TaskCompletionSource<string?>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+                int request = Svc.GetMac(device, (mac, ok) =>
+                {
+                    macTask.TrySetResult(ok ? mac : null);
+                });
+
+                if(request < 0)
+                {
+                    MessageBox.Show("Не удалось запросить MAC устройства.");
+                    return;
+                }
+
+                string? mac = await macTask.Task;
+
+                if(string.IsNullOrWhiteSpace(mac))
+                {
+                    MessageBox.Show("Не удалось получить MAC устройства.");
+                    return;
+                }
+
+                long? deviceId =
+                    await _repo.FindDeviceIdByMacAndBlockAsync(
+                        mac, device.Block);
+
+                if(deviceId == null)
+                {
+                    MessageBox.Show(
+                        "Устройство не найдено в таблице Devices.\n" +
+                        "Сначала необходимо сохранить его конфигурацию в БД.",
+                        Text,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return;
+                }
+
+                using var form = new fMulticastEditor(
+                    Svc, device, _repo, deviceId.Value);
+
+                form.ShowDialog(this);
+            }
+            catch(Exception ex)
+            {
+                MessageBox.Show(
+                    $"Не удалось открыть настройки мультикаста:\n{ex.Message}",
+                    Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
     }
 }

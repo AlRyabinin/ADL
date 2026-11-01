@@ -240,3 +240,19 @@ public sealed class DeviceGroupDeviceEntity
     public long DeviceId { get; set; }
     public int Position { get; set; }
 }
+
+public sealed class DeviceMulticastAddressEntity
+{
+    public long DeviceId { get; set; }
+
+    public string MultiCastAdress { get; set; } = string.Empty;
+}
+
+public sealed class DeviceMulticastSubscriptionEntity
+{
+    public long DeviceId { get; set; }
+
+    public int Slot { get; set; }
+
+    public string MulticastAddress { get; set; } = string.Empty;
+}

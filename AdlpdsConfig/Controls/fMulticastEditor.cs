@@ -1,5 +1,6 @@
 ﻿
 using AdlpdsConfig.Service;
+using AdlpLib.Configuration.Application;
 using AdlpLib.Core;
 using AdlpLib.Models.Devices;
 using System.Net;
@@ -22,11 +23,15 @@ namespace AdlpdsConfig.Controls
         private bool _busy;
         private bool _available = true;
         private bool _errorShown;
+        private readonly DeviceConfigRepository _repository;
+        private readonly long _deviceId;
 
-        internal fMulticastEditor(AdlpdsService svc, Device device)
+        internal fMulticastEditor(AdlpdsService svc, Device device, DeviceConfigRepository repository, long deviceId)
         {
             _svc = svc;
             _device = device;
+            _repository = repository;
+            _deviceId = deviceId;
 
             Text = $"Мультикаст — {device.Name}";
             StartPosition = FormStartPosition.CenterParent;
@@ -146,8 +151,8 @@ namespace AdlpdsConfig.Controls
             {
                 bool sent = _svc.ReadMulticast(
                     _device,
-                    (_, cfg, ok) =>
-                    {
+                    (ignoredDevice, cfg, ok) =>
+    {
                         if(IsDisposed || !IsHandleCreated)
                             return;
 
@@ -171,6 +176,8 @@ namespace AdlpdsConfig.Controls
                                 _subscriptions.Lines =
                                     cfg.Subscriptions.ToArray();
 
+                                _ = SaveReadSettingsAsync(cfg);
+
                                 SetBusy(false, "Параметры прочитаны");
                             }));
                         }
@@ -189,7 +196,35 @@ namespace AdlpdsConfig.Controls
             }
         }
 
-        private void WriteMulticast()
+        private async Task SaveReadSettingsAsync(
+    AdlpdsService.MulticastSettings cfg)
+        {
+            try
+            {
+                await _repository.SaveMulticastSettingsAsync(
+                    _deviceId,
+                    cfg.OwnAddress,
+                    cfg.Subscriptions);
+
+                if(!IsDisposed)
+                    SetBusy(false, "Параметры прочитаны и сохранены в БД");
+            }
+            catch(Exception ex)
+            {
+                if(IsDisposed)
+                    return;
+
+                SetBusy(false, "Прочитано, но БД не обновлена");
+
+                MessageBox.Show(
+                    $"Не удалось сохранить настройки в БД:\n{ex.Message}",
+                    Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        private async void WriteMulticast()
         {
             if(!_available || _busy)
                 return;
@@ -205,17 +240,28 @@ namespace AdlpdsConfig.Controls
             if(cfg == null)
                 return;
 
-            SetBusy(true, "Отправка команд...");
+            SetBusy(true, "Запись...");
 
             try
             {
                 _svc.WriteMulticast(_device, cfg);
 
-                SetBusy(false, "Команды отправлены");
+                await _repository.SaveMulticastSettingsAsync(
+                    _deviceId,
+                    cfg.OwnAddress,
+                    cfg.Subscriptions);
+
+                SetBusy(false, "Настройки записаны и сохранены в БД");
             }
             catch(Exception ex)
             {
-                MarkUnavailable(ex.Message);
+                SetBusy(false, "Ошибка записи или сохранения");
+
+                MessageBox.Show(
+                    $"Ошибка при записи мультикаст-настроек:\n{ex.Message}",
+                    Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
         }
 

@@ -9,6 +9,8 @@ public sealed class AdlpDbContext : DbContext
     public AdlpDbContext(DbContextOptions<AdlpDbContext> options) : base(options) { }
 
     public DbSet<DeviceEntity> Devices => Set<DeviceEntity>();
+    public DbSet<DeviceMulticastAddressEntity> DeviceMulticastAddresses => Set<DeviceMulticastAddressEntity>();
+    public DbSet<DeviceMulticastSubscriptionEntity> DeviceMulticastSubscriptions => Set<DeviceMulticastSubscriptionEntity>();
     public DbSet<PuDeviceEntity> PuDevices => Set<PuDeviceEntity>();
     public DbSet<PuChannelEntity> PuChannels => Set<PuChannelEntity>();
     public DbSet<PuDeviceChannelEntity> PuDeviceChannels => Set<PuDeviceChannelEntity>();
@@ -70,6 +72,52 @@ public sealed class AdlpDbContext : DbContext
             entity.Property(e => e.Block).HasDefaultValue(0);
             entity.Property(e => e.CreatedBy).HasMaxLength(100);
             entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<DeviceMulticastAddressEntity>(entity =>
+        {
+            entity.ToTable("DeviceMulticastAddresses");
+
+            entity.HasKey(e => e.DeviceId);
+
+            entity.Property(e => e.DeviceId)
+                .ValueGeneratedNever();
+
+            entity.Property(e => e.MultiCastAdress)
+                .IsRequired()
+                .HasMaxLength(64);
+
+            entity.HasOne<DeviceEntity>()
+                .WithOne()
+                .HasForeignKey<DeviceMulticastAddressEntity>(
+                    e => e.DeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DeviceMulticastSubscriptionEntity>(entity =>
+        {
+            entity.ToTable("DeviceMulticastSubscriptions");
+
+            entity.HasKey(x => new { x.DeviceId, x.Slot });
+
+            entity.Property(x => x.DeviceId)
+                .ValueGeneratedNever();
+
+            entity.Property(x => x.MulticastAddress)
+                .IsRequired()
+                .HasMaxLength(15);
+
+            entity.HasIndex(x => new
+            {
+                x.DeviceId,
+                x.MulticastAddress
+            })
+            .IsUnique();
+
+            entity.HasOne<DeviceEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.DeviceId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PuDeviceEntity>(entity =>
