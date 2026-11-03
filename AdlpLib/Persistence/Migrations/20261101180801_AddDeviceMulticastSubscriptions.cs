@@ -16,7 +16,12 @@ namespace AdlpLib.Persistence.Migrations
                 {
                     DeviceId = table.Column<long>(type: "INTEGER", nullable: false),
                     Slot = table.Column<int>(type: "INTEGER", nullable: false),
-                    MulticastAddress = table.Column<string>(type: "TEXT", maxLength: 15, nullable: false)
+                    MulticastAddress = table.Column<string>(
+                        type: ActiveProvider == "Pomelo.EntityFrameworkCore.MySql"
+                            ? "VARCHAR(15)"
+                            : "TEXT",
+                        maxLength: 15,
+                        nullable: false)
                 },
                 constraints: table =>
                 {

@@ -110,7 +110,13 @@ namespace AdlpLib.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("Uuid")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Uuid", "Block")
+                        .IsUnique();
 
                     b.ToTable("Devices", (string)null);
                 });
@@ -174,10 +180,13 @@ namespace AdlpLib.Persistence.Migrations
 
                     b.Property<string>("MultiCastAdress")
                         .IsRequired()
-                        .HasMaxLength(64)
+                        .HasMaxLength(15)
                         .HasColumnType("TEXT");
 
                     b.HasKey("DeviceId");
+
+                    b.HasIndex("MultiCastAdress")
+                        .IsUnique();
 
                     b.ToTable("DeviceMulticastAddresses", (string)null);
                 });
@@ -200,7 +209,10 @@ namespace AdlpLib.Persistence.Migrations
                     b.HasIndex("DeviceId", "MulticastAddress")
                         .IsUnique();
 
-                    b.ToTable("DeviceMulticastSubscriptions", (string)null);
+                    b.ToTable("DeviceMulticastSubscriptions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_DeviceMulticastSubscriptions_DeviceIdSlot", "Slot >= 1 AND Slot <= 32");
+                        });
                 });
 
             modelBuilder.Entity("AdlpLib.Persistence.Entities.ExecChannelEntity", b =>

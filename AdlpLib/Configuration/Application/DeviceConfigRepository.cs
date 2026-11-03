@@ -1,4 +1,5 @@
 ﻿#nullable enable
+using AdlpLib.Core;
 using AdlpLib.LiveConfig;
 using AdlpLib.Models.Devices;
 using AdlpLib.Models.Devices.Exec;
@@ -11,6 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -42,7 +44,7 @@ namespace AdlpLib.Configuration.Application
         private const string TypePu6 = "PU6";
         private const string TypePuBW = "PUBW";
         private const string TypePu = "PU";
-        private const string TypeExec = "EXEC"; // старый тип, поддерживаем для обратной совместимости
+        private const string TypeExec = "EXEC";
         private const string TypeIkb = "IKB";
         private const string TypeDimmer220 = "DIM220";
         private const string TypeDimmerCabinet = "DIMCABINET";
@@ -67,7 +69,23 @@ namespace AdlpLib.Configuration.Application
         public async Task EnsureSchemaAsync(CancellationToken ct = default)
         {
             await using var db = CreateDbContext();
-            await AdlpDatabaseInitializer.ApplyPendingMigrationsAsync(db, ct).ConfigureAwait(false);
+            try
+            {
+                await AdlpDatabaseInitializer.ApplyPendingMigrationsAsync(db, ct)
+                    .ConfigureAwait(false);
+            }
+            catch(Exception ex)
+            {
+                string diagnostics = await GetDatabaseDiagnosticsAsync(
+                    CancellationToken.None);
+
+                throw new InvalidOperationException(
+                    ex.GetBaseException().Message +
+                    Environment.NewLine +
+                    Environment.NewLine +
+                    diagnostics,
+                    ex);
+            }
 
 
             await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -202,8 +220,22 @@ END;", ct).ConfigureAwait(false);
 
                 if(dto.Id == 0)
                 {
-                    device = new DeviceEntity();
-                    db.Devices.Add(device);
+                    device = null;
+
+                    if(dto.Uuid.HasValue && dto.Uuid.Value != Guid.Empty)
+                    {
+                        device = await db.Devices
+                            .SingleOrDefaultAsync(
+                                x => x.Uuid == dto.Uuid &&
+                                     x.Block == dto.Block,
+                                ct);
+                    }
+
+                    if(device == null)
+                    {
+                        device = new DeviceEntity();
+                        db.Devices.Add(device);
+                    }
                 }
                 else
                 {
@@ -249,6 +281,7 @@ END;", ct).ConfigureAwait(false);
         private static void CopyToEntity(DeviceConfigDtoBase dto, DeviceEntity entity, string configType)
         {
             entity.Name = dto.Name ?? string.Empty;
+            entity.Uuid = dto.Uuid.HasValue && dto.Uuid.Value != Guid.Empty ? dto.Uuid : null;
             entity.ConfigType = configType;
             entity.DeviceType = dto.DeviceType ?? string.Empty;
             entity.SID = dto.SID;
@@ -520,9 +553,7 @@ END;", ct).ConfigureAwait(false);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
 
-        public async Task<(string OwnAddress, List<string> Subscriptions)> GetMulticastSettingsAsync(
-        long deviceId,
-        CancellationToken ct = default)
+        public async Task<(string OwnAddress, List<string> Subscriptions)> GetMulticastSettingsAsync(long deviceId, CancellationToken ct = default)
         {
             await using var db = CreateDbContext();
 
@@ -542,28 +573,71 @@ END;", ct).ConfigureAwait(false);
             return (ownAddress, subscriptions);
         }
 
-        public async Task<long?> FindDeviceIdByMacAndBlockAsync(
-    string mac,
+        private static string GetConfigTypeFromDeviceName(string deviceName)
+        {
+            string type = deviceName.Trim()
+                .Replace(" ", "")
+                .ToUpperInvariant();
+
+            return type switch
+            {
+                "PU" => TypePu,
+                "PU6" => TypePu6,
+                "PUBW" => TypePuBW,
+                "IKB" => TypeIkb,
+                "DIM220" => TypeDimmer220,
+                "DIMCABINET" => TypeDimmerCabinet,
+                "NETGATE" => TypeNetGate,
+                "EXEC" => TypeExec,
+
+                _ => throw new NotSupportedException(
+                    $"Неизвестный тип устройства: {deviceName}")
+            };
+        }
+
+        public async Task<long> GetOrCreateDeviceIdAsync(
+    Guid uuid,
     int block,
+    string deviceName,
+    string? ipAddress = null,
     CancellationToken ct = default)
         {
-            if(string.IsNullOrWhiteSpace(mac))
-                return null;
+            if(uuid == Guid.Empty)
+                throw new InvalidOperationException(
+                    "Устройство не передало UUID.");
 
             await using var db = CreateDbContext();
 
-            var ids = await db.Devices
-                .AsNoTracking()
-                .Where(x => x.Mac == mac && x.Block == block)
-                .Select(x => x.Id)
-                .Take(2)
-                .ToListAsync(ct);
+            await PrepareConnectionAsync(db, ct);
 
-            if(ids.Count > 1)
-                throw new InvalidOperationException(
-                    $"Найдено несколько устройств с MAC={mac} и Block={block}.");
+            var existing = await db.Devices
+                .SingleOrDefaultAsync(
+                    x => x.Uuid == uuid && x.Block == block,
+                    ct);
 
-            return ids.Count == 0 ? null : ids[0];
+            if(existing != null)
+                return existing.Id;
+
+            string configType = GetConfigTypeFromDeviceName(deviceName);
+
+            var device = new DeviceEntity
+            {
+                Uuid = uuid,
+                Block = block,
+                Name = deviceName,
+                DeviceType = deviceName,
+                ConfigType = configType,
+                Mac = string.Empty,
+                Ip = ipAddress ?? string.Empty,
+                Mask = string.Empty,
+                Gateway = string.Empty
+            };
+
+            db.Devices.Add(device);
+
+            await db.SaveChangesAsync(ct);
+
+            return device.Id;
         }
 
         // Удаляет дочерние конфигурации перед повторным сохранением. Общие справочники
@@ -638,6 +712,7 @@ END;", ct).ConfigureAwait(false);
         private static void CopyCommonToDto(DeviceEntity device, DeviceConfigDtoBase dto)
         {
             dto.Id = device.Id;
+            dto.Uuid = device.Uuid;
             dto.Name = device.Name;
             dto.SID = device.SID ?? 0;
             dto.Mac = device.Mac;
@@ -926,25 +1001,30 @@ END;", ct).ConfigureAwait(false);
                 .ToListAsync(ct).ConfigureAwait(false);
         }
 
-        public async Task SaveMulticastSettingsAsync(
-    long deviceId,
-    string? ownAddress,
-    IReadOnlyCollection<string> subscriptions,
-    CancellationToken ct = default)
+        public async Task SaveMulticastSettingsAsync(long deviceId, string? ownAddress, IReadOnlyCollection<string> subscriptions, CancellationToken ct = default)
         {
+            if(deviceId <= 0)
+                throw new ArgumentOutOfRangeException(nameof(deviceId));
+
+            ArgumentNullException.ThrowIfNull(subscriptions);
+
             var addresses = subscriptions
-                .Select(x => x.Trim())
                 .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             if(addresses.Count > 32)
                 throw new ArgumentException(
-                    "Максимальное количество multicast-подписок — 32.");
+                    "Максимальное количество подписок — 32.");
 
-            if(!string.IsNullOrWhiteSpace(ownAddress) &&
-                !IsMulticastAddress(ownAddress))
-                throw new ArgumentException("Некорректный собственный multicast-адрес.");
+            ownAddress = string.IsNullOrWhiteSpace(ownAddress)
+                ? string.Empty
+                : ownAddress.Trim();
+
+            if(ownAddress.Length > 0 && !IsMulticastAddress(ownAddress))
+                throw new ArgumentException(
+                    "Некорректный собственный multicast-адрес.");
 
             foreach(var address in addresses)
             {
@@ -955,26 +1035,22 @@ END;", ct).ConfigureAwait(false);
 
             await using var db = CreateDbContext();
 
-            await PrepareConnectionAsync(db, ct);
+            await PrepareConnectionAsync(db, ct).ConfigureAwait(false);
+
+            if(!await db.Devices.AnyAsync(x => x.Id == deviceId, ct))
+                throw new InvalidOperationException(
+                    $"Устройство с Id={deviceId} не найдено.");
 
             await using var tx =
                 await db.Database.BeginTransactionAsync(ct);
 
             try
             {
-                bool exists = await db.Devices
-                    .AnyAsync(x => x.Id == deviceId, ct);
-
-                if(!exists)
-                    throw new InvalidOperationException(
-                        $"Устройство Id={deviceId} не найдено.");
-
                 // Собственный multicast-адрес.
                 var own = await db.DeviceMulticastAddresses
-                    .SingleOrDefaultAsync(
-                        x => x.DeviceId == deviceId, ct);
+                    .FindAsync(new object[] { deviceId }, ct);
 
-                if(string.IsNullOrWhiteSpace(ownAddress))
+                if(string.IsNullOrEmpty(ownAddress))
                 {
                     if(own != null)
                         db.DeviceMulticastAddresses.Remove(own);
@@ -985,23 +1061,22 @@ END;", ct).ConfigureAwait(false);
                         new DeviceMulticastAddressEntity
                         {
                             DeviceId = deviceId,
-                            MultiCastAdress = ownAddress.Trim()
+                            MultiCastAdress = ownAddress
                         });
                 }
                 else
                 {
-                    own.MultiCastAdress = ownAddress.Trim();
+                    own.MultiCastAdress = ownAddress;
                 }
 
-                // Удаляем прежние подписки.
-                var oldSubscriptions = await db.DeviceMulticastSubscriptions
-                    .Where(x => x.DeviceId == deviceId)
-                    .ToListAsync(ct);
+                // Заменяем старые подписки новыми.
+                var oldSubscriptions =
+                    await db.DeviceMulticastSubscriptions
+                        .Where(x => x.DeviceId == deviceId)
+                        .ToListAsync(ct);
 
-                db.DeviceMulticastSubscriptions.RemoveRange(
-                    oldSubscriptions);
+                db.DeviceMulticastSubscriptions.RemoveRange(oldSubscriptions);
 
-                // Записываем новый список с сохранением порядка.
                 db.DeviceMulticastSubscriptions.AddRange(
                     addresses.Select((address, index) =>
                         new DeviceMulticastSubscriptionEntity
@@ -1012,6 +1087,7 @@ END;", ct).ConfigureAwait(false);
                         }));
 
                 await db.SaveChangesAsync(ct);
+
                 await tx.CommitAsync(ct);
             }
             catch
@@ -1082,8 +1158,10 @@ END;", ct).ConfigureAwait(false);
                     "PuButtonChannels", "PuDeviceButtons", "PuButtons",
                     "PuDevicePictures", "PuPictures", "PuGroupChannels", "PuDeviceGroups",
                     "PuGroups", "PuDeviceChannels", "PuChannels", "PuDevices",
+
                     "DeviceMulticastSubscriptions",
                     "DeviceMulticastAddresses",
+
                     "Devices", "_audit_context", "__EFMigrationsHistory"
                 };
 
@@ -1116,19 +1194,468 @@ END;", ct).ConfigureAwait(false);
             _ => throw new NotSupportedException($"Тип {dto.GetType().Name} не поддержан.")
         };
 
-        public async Task<long?> FindDeviceIdByMacAsync(
-            string mac, string configType, CancellationToken ct = default)
+        public async Task<string> GetOrAssignMulticastAddressAsync(
+    long deviceId,
+    CancellationToken ct = default)
         {
-            if(string.IsNullOrWhiteSpace(mac))
+            if(deviceId <= 0)
+                throw new ArgumentOutOfRangeException(nameof(deviceId));
+
+            await using var db = CreateDbContext();
+
+            await PrepareConnectionAsync(db, ct);
+
+            await using var tx = await db.Database.BeginTransactionAsync(
+                System.Data.IsolationLevel.Serializable, ct);
+
+            // Получаем устройство и его тип конфигурации.
+            var device = await db.Devices
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == deviceId, ct);
+
+            if(device == null)
+                throw new InvalidOperationException(
+                    $"Устройство с Id={deviceId} не найдено.");
+
+            // Если адрес уже есть — оставляем его.
+            var own = await db.DeviceMulticastAddresses
+                .SingleOrDefaultAsync(x => x.DeviceId == deviceId, ct);
+
+            if(own != null && !string.IsNullOrWhiteSpace(own.MultiCastAdress))
+            {
+                await tx.CommitAsync(ct);
+                return own.MultiCastAdress;
+            }
+
+            // Получаем диапазон для типа устройства.
+            var range = GetMulticastAddressRange(device.ConfigType);
+
+            // Получаем все занятые собственные адреса.
+            var usedAddresses = await db.DeviceMulticastAddresses
+                .AsNoTracking()
+                .Where(x => x.DeviceId != deviceId)
+                .Select(x => x.MultiCastAdress)
+                .ToListAsync(ct);
+
+            var used = new HashSet<string>(
+                usedAddresses,
+                StringComparer.OrdinalIgnoreCase);
+
+            // Выбираем первый свободный адрес.
+            string? newAddress = null;
+
+            for(int third = range.First; third <= range.Last; third++)
+            {
+                for(int fourth = 0; fourth <= 255; fourth++)
+                {
+                    string candidate = $"239.251.{third}.{fourth}";
+
+                    if(!used.Contains(candidate))
+                    {
+                        newAddress = candidate;
+                        break;
+                    }
+                }
+
+                if(newAddress != null)
+                    break;
+            }
+
+            if(newAddress == null)
+            {
+                throw new InvalidOperationException(
+                    $"Закончились multicast-адреса для типа {device.ConfigType}. " +
+                    $"Диапазон 239.251.{range.First}.0 – " +
+                    $"239.251.{range.Last}.0 полностью занят.");
+            }
+
+            // Сохраняем новый адрес.
+            if(own == null)
+            {
+                db.DeviceMulticastAddresses.Add(
+                    new DeviceMulticastAddressEntity
+                    {
+                        DeviceId = deviceId,
+                        MultiCastAdress = newAddress
+                    });
+            }
+            else
+            {
+                own.MultiCastAdress = newAddress;
+            }
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            return newAddress;
+        }
+
+        private static (int First, int Last) GetMulticastAddressRange(string configType)
+        {
+            return configType.Trim().ToUpperInvariant() switch
+            {
+                TypeExec or TypeIkb or TypeDimmer220 or TypeDimmerCabinet => (1, 10),
+
+                TypePu or TypePu6 or TypePuBW => (11, 20),
+
+                TypeNetGate => (21, 30),
+
+                _ => (31, 40)
+            };
+        }
+
+        public async Task<List<string>> GetMatchingMulticastAddressesAsync(
+    long deviceId,
+    CancellationToken ct = default)
+        {
+            // Загружаем конфигурацию выбранного устройства.
+            var currentConfig = await LoadAsync(deviceId, ct);
+
+            if(currentConfig == null)
+                return new List<string>();
+
+            var currentFamily = GetMulticastFamily(currentConfig);
+
+            if(!currentFamily.HasValue)
+                return new List<string>();
+
+            var currentIndexes = GetMulticastChannelIndexes(currentConfig);
+
+            if(currentIndexes.Count == 0)
+                return new List<string>();
+
+            // Получаем остальные устройства из БД.
+            var headers = await GetAllHeadersAsync(ct);
+
+            var result = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach(var header in headers)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // Не сравниваем устройство само с собой.
+                if(header.Id == deviceId)
+                    continue;
+
+                var otherConfig = await LoadAsync(header.Id, ct);
+
+                if(otherConfig == null)
+                    continue;
+
+                var otherFamily = GetMulticastFamily(otherConfig);
+
+                // Неизвестные типы пропускаем.
+                if(!otherFamily.HasValue)
+                    continue;
+
+                // Одно семейство — подписку не создаём.
+                if(otherFamily.Value == currentFamily.Value)
+                    continue;
+
+                var otherIndexes = GetMulticastChannelIndexes(otherConfig);
+
+                // Проверяем совпадение индексов.
+                if(!currentIndexes.Overlaps(otherIndexes))
+                    continue;
+
+                // Получаем собственный multicast-адрес другого устройства.
+                var multicast = await GetMulticastSettingsAsync(
+                    header.Id,
+                    ct);
+
+                if(string.IsNullOrWhiteSpace(multicast.OwnAddress))
+                    continue;
+
+                // Добавляем адрес только один раз.
+                result.Add(multicast.OwnAddress.Trim());
+            }
+
+            return result.OrderBy(x => x).ToList();
+        }
+
+        private enum MulticastDeviceFamily
+        {
+            Exec,
+            Pu,
+            NetGate
+        }
+
+        private static MulticastDeviceFamily? GetMulticastFamily(
+            DeviceConfigDtoBase dto)
+        {
+            return dto switch
+            {
+                ExecConfigDto => MulticastDeviceFamily.Exec,
+
+                PuConfigDtoBase => MulticastDeviceFamily.Pu,
+
+                NetGateConfigDto => MulticastDeviceFamily.NetGate,
+
+                _ => null
+            };
+        }
+
+        private static HashSet<int> GetMulticastChannelIndexes(
+    DeviceConfigDtoBase dto)
+        {
+            return dto switch
+            {
+                ExecConfigDto exec => new HashSet<int>(
+                    exec.Channels?
+                        .Where(x => x.GlobalIndex > 0)
+                        .Select(x => x.GlobalIndex)
+                    ?? Enumerable.Empty<int>()),
+
+                PuConfigDtoBase pu => new HashSet<int>(
+                    pu.Channels?
+                        .Where(x =>
+                            x.Type == (int)ChannelType.CHTYPE_CHANNEL &&
+                            x.Index > 0)
+                        .Select(x => x.Index)
+                    ?? Enumerable.Empty<int>()),
+
+                NetGateConfigDto gate => new HashSet<int>(
+                    gate.Channels?
+                        .Where(x => x.Index > 0)
+                        .Select(x => x.Index)
+                    ?? Enumerable.Empty<int>()),
+
+                _ => new HashSet<int>()
+            };
+        }
+
+        public async Task<long?> FindDeviceIdByUuidAndBlockAsync(Guid uuid, int block, CancellationToken ct = default)
+        {
+            if(uuid == Guid.Empty)
                 return null;
 
             await using var db = CreateDbContext();
-            return await db.Devices.AsNoTracking()
-                .Where(x => x.Mac == mac && x.ConfigType == configType)
-                .OrderBy(x => x.Id)
-                .Select(x => (long?)x.Id)
-                .FirstOrDefaultAsync(ct)
-                .ConfigureAwait(false);
+
+            var ids = await db.Devices
+                .AsNoTracking()
+                .Where(x => x.Uuid == uuid && x.Block == block)
+                .Select(x => x.Id)
+                .Take(2)
+                .ToListAsync(ct);
+
+            if(ids.Count > 1)
+                throw new InvalidOperationException(
+                    $"Найдено несколько устройств с UUID {uuid} и блоком {block}.");
+
+            return ids.Count == 1 ? ids[0] : null;
+        }
+
+        public async Task<string> GetDatabaseDiagnosticsAsync(
+    CancellationToken ct = default)
+        {
+            var sb = new StringBuilder();
+
+            await using var db = CreateDbContext();
+
+            sb.AppendLine($"Provider: {db.Database.ProviderName}");
+            sb.AppendLine($"Migration assembly: {typeof(AdlpDbContext).Assembly.Location}");
+
+            try
+            {
+                var all = db.Database.GetMigrations();
+                var applied = db.Database.GetAppliedMigrations();
+                var pending = db.Database.GetPendingMigrations();
+
+                sb.AppendLine();
+                sb.AppendLine("=== ALL MIGRATIONS ===");
+
+                foreach(var item in all)
+                    sb.AppendLine(item);
+
+                sb.AppendLine();
+                sb.AppendLine("=== APPLIED MIGRATIONS ===");
+
+                foreach(var item in applied)
+                    sb.AppendLine(item);
+
+                sb.AppendLine();
+                sb.AppendLine("=== PENDING MIGRATIONS ===");
+
+                foreach(var item in pending)
+                    sb.AppendLine(item);
+
+            }
+            catch(Exception ex)
+            {
+                sb.AppendLine("Ошибка чтения истории миграций:");
+                sb.AppendLine(ex.ToString());
+            }
+
+            if(_dbType == DatabaseType.MySQL)
+            {
+                try
+                {
+                    await db.Database.OpenConnectionAsync(ct);
+
+                    var conn = db.Database.GetDbConnection();
+
+                    await using(var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT DATABASE()";
+
+                        var database = await cmd.ExecuteScalarAsync(ct);
+
+                        sb.AppendLine();
+                        sb.AppendLine($"=== CURRENT DATABASE: {database} ===");
+                    }
+
+                    await using(var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT TABLE_NAME
+                            FROM information_schema.tables
+                            WHERE TABLE_SCHEMA = DATABASE()
+                            AND TABLE_NAME IN (
+                                'MulticastDevices',
+                                'DeviceMulticastAddresses',
+                                'DeviceMulticastSubscriptions'
+                            )
+                            ORDER BY TABLE_NAME;";
+
+                        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+                        sb.AppendLine();
+                        sb.AppendLine("=== MULTICAST TABLES ===");
+
+                        while(await reader.ReadAsync(ct))
+                            sb.AppendLine(reader.GetString(0));
+                    }
+
+                    // Структура таблиц и collation.
+                    await using(var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLLATION_NAME
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+AND TABLE_NAME IN (
+    'Devices',
+    'DeviceMulticastAddresses',
+    'DeviceMulticastSubscriptions'
+)
+ORDER BY TABLE_NAME, ORDINAL_POSITION;";
+
+                        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+                        sb.AppendLine();
+                        sb.AppendLine("=== TABLE COLUMNS ===");
+
+                        while(await reader.ReadAsync(ct))
+                        {
+                            string collation = reader.IsDBNull(3)
+                                ? "-"
+                                : reader.GetString(3);
+
+                            sb.AppendLine(
+                                $"{reader.GetString(0)}.{reader.GetString(1)} | " +
+                                $"{reader.GetString(2)} | {collation}");
+                        }
+                    }
+
+                    // Количество сохранённых multicast-настроек.
+                    await using(var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT
+                                (SELECT COUNT(*) FROM DeviceMulticastAddresses),
+                                (SELECT COUNT(*) FROM DeviceMulticastSubscriptions);";
+
+                        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+                        if(await reader.ReadAsync(ct))
+                        {
+                            sb.AppendLine();
+                            sb.AppendLine("=== MULTICAST ROW COUNTS ===");
+                            sb.AppendLine($"Addresses: {reader.GetInt64(0)}");
+                            sb.AppendLine($"Subscriptions: {reader.GetInt64(1)}");
+                        }
+                    }
+
+                    // Записи устройств и их MAC.
+                    await using(var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT Id, Mac, Block, ConfigType, Name
+                            FROM Devices
+                            ORDER BY Id
+                            LIMIT 30;";
+
+                        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+                        sb.AppendLine();
+                        sb.AppendLine("=== DEVICES ===");
+
+                        while(await reader.ReadAsync(ct))
+                        {
+                            sb.AppendLine(
+                                $"Id={reader.GetInt64(0)}, " +
+                                $"Mac={reader.GetString(1)}, " +
+                                $"Block={reader.GetInt32(2)}, " +
+                                $"ConfigType={reader.GetString(3)}, " +
+                                $"Name={reader.GetString(4)}");
+                        }
+                    }
+
+                    await using(var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT
+                                a.DeviceMac,
+                                a.MultiCastAdress,
+                                d.Id,
+                                d.Mac,
+                                d.Block,
+                                d.ConfigType,
+                                d.Name
+                            FROM DeviceMulticastAddresses a
+                            LEFT JOIN Devices d
+                                ON REPLACE(REPLACE(REPLACE(
+                                    UPPER(TRIM(CONVERT(d.Mac USING utf8mb4))),
+                                    ':', ''), '-', ''), '.', '')
+                                    COLLATE utf8mb4_bin
+                                =
+                                   REPLACE(REPLACE(REPLACE(
+                                    UPPER(TRIM(CONVERT(a.DeviceMac USING utf8mb4))),
+                                    ':', ''), '-', ''), '.', '')
+                                    COLLATE utf8mb4_bin;";
+
+                        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+                        sb.AppendLine();
+                        sb.AppendLine("=== MULTICAST DEVICE MATCH ===");
+
+                        while(await reader.ReadAsync(ct))
+                        {
+                            sb.AppendLine(
+                                $"DeviceMac={reader.GetString(0)}, " +
+                                $"OwnAddress={reader.GetString(1)}, " +
+                                $"DeviceId={(reader.IsDBNull(2) ? "NOT FOUND" : reader.GetInt64(2))}, " +
+                                $"DevicesMac={(reader.IsDBNull(3) ? "" : reader.GetString(3))}, " +
+                                $"Block={(reader.IsDBNull(4) ? "" : reader.GetInt32(4).ToString())}, " +
+                                $"ConfigType={(reader.IsDBNull(5) ? "" : reader.GetString(5))}, " +
+                                $"Name={(reader.IsDBNull(6) ? "" : reader.GetString(6))}");
+                        }
+                    }
+                }
+                catch(Exception ex)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("Ошибка проверки таблиц:");
+                    sb.AppendLine(ex.Message);
+                }
+                finally
+                {
+                    await db.Database.CloseConnectionAsync();
+                }
+            }
+
+            return sb.ToString();
         }
     }
 }

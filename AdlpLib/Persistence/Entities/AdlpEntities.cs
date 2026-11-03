@@ -12,6 +12,7 @@ public sealed class DeviceEntity
     public string ConfigType { get; set; } = string.Empty;
     public string DeviceType { get; set; } = string.Empty;
     public int? SID { get; set; }
+    public Guid? Uuid { get; set; }
     public string Mac { get; set; } = string.Empty;
     public string Ip { get; set; } = string.Empty;
     public string Mask { get; set; } = string.Empty;

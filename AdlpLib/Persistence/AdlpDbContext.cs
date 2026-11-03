@@ -72,47 +72,45 @@ public sealed class AdlpDbContext : DbContext
             entity.Property(e => e.Block).HasDefaultValue(0);
             entity.Property(e => e.CreatedBy).HasMaxLength(100);
             entity.Property(e => e.UpdatedBy).HasMaxLength(100);
+            entity.HasIndex(e => new { e.Uuid, e.Block }).IsUnique();
         });
 
         modelBuilder.Entity<DeviceMulticastAddressEntity>(entity =>
         {
             entity.ToTable("DeviceMulticastAddresses");
 
-            entity.HasKey(e => e.DeviceId);
+            entity.HasKey(x => x.DeviceId);
 
-            entity.Property(e => e.DeviceId)
-                .ValueGeneratedNever();
+            entity.Property(x => x.MultiCastAdress)
+                .HasMaxLength(15)
+                .IsRequired();
 
-            entity.Property(e => e.MultiCastAdress)
-                .IsRequired()
-                .HasMaxLength(64);
+            entity.HasIndex(x => x.MultiCastAdress)
+                .IsUnique();
 
             entity.HasOne<DeviceEntity>()
                 .WithOne()
-                .HasForeignKey<DeviceMulticastAddressEntity>(
-                    e => e.DeviceId)
+                .HasForeignKey<DeviceMulticastAddressEntity>(x => x.DeviceId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<DeviceMulticastSubscriptionEntity>(entity =>
         {
-            entity.ToTable("DeviceMulticastSubscriptions");
+            entity.ToTable("DeviceMulticastSubscriptions", table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_DeviceMulticastSubscriptions_DeviceIdSlot",
+                    "Slot >= 1 AND Slot <= 32");
+            });
 
             entity.HasKey(x => new { x.DeviceId, x.Slot });
 
-            entity.Property(x => x.DeviceId)
-                .ValueGeneratedNever();
-
             entity.Property(x => x.MulticastAddress)
-                .IsRequired()
-                .HasMaxLength(15);
+                .HasMaxLength(15)
+                .IsRequired();
 
-            entity.HasIndex(x => new
-            {
-                x.DeviceId,
-                x.MulticastAddress
-            })
-            .IsUnique();
+            entity.HasIndex(x => new { x.DeviceId, x.MulticastAddress })
+                .IsUnique();
 
             entity.HasOne<DeviceEntity>()
                 .WithMany()

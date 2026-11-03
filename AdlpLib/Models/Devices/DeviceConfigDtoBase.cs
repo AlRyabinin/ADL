@@ -1,6 +1,7 @@
 ﻿using AdlpLib.Models.Devices.Exec;
 using AdlpLib.Models.Devices.NetGate;
 using AdlpLib.Models.Devices.PU;
+using System;
 using System.Text.Json.Serialization;
 
 namespace AdlpLib.Models.Devices
@@ -54,5 +55,8 @@ namespace AdlpLib.Models.Devices
 
         [JsonPropertyOrder(7)]
         public int Block { get; set; }
+
+        [JsonPropertyOrder(8)]
+        public Guid? Uuid { get; set; }
     }
 }

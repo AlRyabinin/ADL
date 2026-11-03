@@ -710,9 +710,40 @@ namespace AdlpdsConfig
             catch(Exception exc)
             {
                 _repo = null;
+
                 System.Diagnostics.Debug.WriteLine(
-                    $"[InitRepository] {exc.GetType().Name}: {exc.Message}");
+                    $"[InitRepository] {exc}");
+
+                ShowDatabaseError(exc.Message);
             }
+        }
+
+        private void ShowDatabaseError(string message)
+        {
+            if(IsDisposed || !IsHandleCreated)
+                return;
+
+            if(InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                        ShowDatabaseError(message)));
+                }
+                catch(InvalidOperationException)
+                {
+
+                }
+
+                return;
+            }
+
+            MessageBox.Show(
+                this,
+                message,
+                "Ошибка подключения к БД",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
 
         private void fMain_FormClosing(object sender, FormClosingEventArgs e)
@@ -792,8 +823,7 @@ namespace AdlpdsConfig
             }
         }
 
-        private async void MulticastToolStripMenuItem_Click(
-    object sender, EventArgs e)
+        private async void MulticastToolStripMenuItem_Click(object sender, EventArgs e)
         {
             var device = GetSelectedDevice();
 
@@ -802,55 +832,19 @@ namespace AdlpdsConfig
 
             if(_repo == null)
             {
-                MessageBox.Show(
-                    "Нет подключения к базе данных.",
-                    Text,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                MessageBox.Show("Нет подключения к базе данных.");
                 return;
             }
 
             try
             {
-                var macTask = new TaskCompletionSource<string?>(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
-
-                int request = Svc.GetMac(device, (mac, ok) =>
-                {
-                    macTask.TrySetResult(ok ? mac : null);
-                });
-
-                if(request < 0)
-                {
-                    MessageBox.Show("Не удалось запросить MAC устройства.");
-                    return;
-                }
-
-                string? mac = await macTask.Task;
-
-                if(string.IsNullOrWhiteSpace(mac))
-                {
-                    MessageBox.Show("Не удалось получить MAC устройства.");
-                    return;
-                }
-
-                long? deviceId =
-                    await _repo.FindDeviceIdByMacAndBlockAsync(
-                        mac, device.Block);
-
-                if(deviceId == null)
-                {
-                    MessageBox.Show(
-                        "Устройство не найдено в таблице Devices.\n" +
-                        "Сначала необходимо сохранить его конфигурацию в БД.",
-                        Text,
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
-                    return;
-                }
+                long deviceId = await _repo.GetOrCreateDeviceIdAsync(device.Uuid, device.Block, device.Name, device.Endpoint?.Address.ToString());
 
                 using var form = new fMulticastEditor(
-                    Svc, device, _repo, deviceId.Value);
+                    Svc,
+                    device,
+                    _repo,
+                    deviceId);
 
                 form.ShowDialog(this);
             }

@@ -583,6 +583,9 @@ namespace AdlpdsConfig.Controls
             {
                 Mac = MacValue.Text,
                 Ip = tbIp.Text,
+                Uuid = CurrentDevice.Uuid == Guid.Empty
+                    ? null
+                    : CurrentDevice.Uuid,
                 Mask = tbMask.Text,
                 Gateway = tbgw.Text,
                 Block = (int)udBlock.Value,
@@ -603,6 +606,9 @@ namespace AdlpdsConfig.Controls
             {
                 Mac = MacValue.Text,
                 Ip = tbIp.Text,
+                Uuid = CurrentDevice.Uuid == Guid.Empty
+                    ? null
+                    : CurrentDevice.Uuid,
                 Mask = tbMask.Text,
                 Gateway = tbgw.Text,
                 Block = (int)udBlock.Value,

@@ -287,18 +287,26 @@ namespace AdlpdsConfig.Controls.Database
                                   ?? throw new InvalidOperationException(
                                         "Не удалось разобрать конфигурацию.");
 
-                        if(string.IsNullOrWhiteSpace(cfg.Mac))
-                            throw new InvalidOperationException("В файле не указан MAC.");
+                        long? existingId = null;
 
-                        string configType = DeviceConfigRepository.ConfigTypeOf(cfg);
-                        var existingId = await _repo.FindDeviceIdByMacAsync(cfg.Mac, configType);
+                        if(cfg.Uuid.HasValue && cfg.Uuid.Value != Guid.Empty)
+                        {
+                            existingId = await _repo.FindDeviceIdByUuidAndBlockAsync(
+                                cfg.Uuid.Value,
+                                cfg.Block);
+                        }
 
                         bool isUpdate = existingId.HasValue;
-                        if(isUpdate) cfg.Id = existingId!.Value;
+
+                        if(isUpdate)
+                            cfg.Id = existingId.Value;
 
                         await _repo.SaveAsync(cfg);
 
-                        if(isUpdate) updated++; else added++;
+                        if(isUpdate)
+                            updated++;
+                        else
+                            added++;
                     }
                     catch(Exception ex)
                     {

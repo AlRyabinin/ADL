@@ -42,7 +42,6 @@ namespace AdlpdsConfig.Controls
 
             Shown += (_, _) => ReadMulticast();
         }
-
         private void BuildInterface()
         {
             var layout = new TableLayoutPanel
@@ -196,33 +195,78 @@ namespace AdlpdsConfig.Controls
             }
         }
 
-        private async Task SaveReadSettingsAsync(
-    AdlpdsService.MulticastSettings cfg)
+        private async Task SaveReadSettingsAsync(AdlpdsService.MulticastSettings cfg)
         {
             try
             {
+                var existing = (cfg.Subscriptions ?? new List<string>())
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                var matchingAddresses =
+                    await _repository.GetMatchingMulticastAddressesAsync(
+                        _deviceId);
+
+                var merged = existing
+                    .Concat(matchingAddresses)
+                    .Where(x => !string.Equals(
+                        x,
+                        cfg.OwnAddress,
+                        StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                int addedCount = merged.Count - existing.Count;
+
+                if(merged.Count > AdlpdsService.MaxIgmpSlots)
+                {
+                    throw new InvalidOperationException(
+                        $"После автоматического добавления найдено {merged.Count} подписок.\n" +
+                        $"Устройство поддерживает максимум {AdlpdsService.MaxIgmpSlots}.");
+                }
+
+                cfg.Subscriptions = merged;
+
                 await _repository.SaveMulticastSettingsAsync(
                     _deviceId,
                     cfg.OwnAddress,
                     cfg.Subscriptions);
 
-                if(!IsDisposed)
+                if(IsDisposed)
+                    return;
+
+                _subscriptions.Lines = merged.ToArray();
+
+                if(addedCount > 0)
+                {
+                    _svc.WriteMulticast(_device, cfg);
+
+                    SetBusy(
+                        false,
+                        $"Автоматически добавлено подписок: {addedCount}");
+                }
+                else
+                {
                     SetBusy(false, "Параметры прочитаны и сохранены в БД");
+                }
             }
             catch(Exception ex)
             {
                 if(IsDisposed)
                     return;
 
-                SetBusy(false, "Прочитано, но БД не обновлена");
+                SetBusy(false, "Ошибка обработки подписок");
 
                 MessageBox.Show(
-                    $"Не удалось сохранить настройки в БД:\n{ex.Message}",
+                    $"Ошибка при автоматическом формировании подписок:\n{ex.Message}",
                     Text,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
         }
+
 
         private async void WriteMulticast()
         {
@@ -246,10 +290,7 @@ namespace AdlpdsConfig.Controls
             {
                 _svc.WriteMulticast(_device, cfg);
 
-                await _repository.SaveMulticastSettingsAsync(
-                    _deviceId,
-                    cfg.OwnAddress,
-                    cfg.Subscriptions);
+                await _repository.SaveMulticastSettingsAsync(_deviceId, cfg.OwnAddress, cfg.Subscriptions);
 
                 SetBusy(false, "Настройки записаны и сохранены в БД");
             }
