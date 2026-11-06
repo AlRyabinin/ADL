@@ -27,6 +27,7 @@ partial class fMain : Form
         miSaveConfiguration = new ToolStripMenuItem();
         miLoadConfiguration = new ToolStripMenuItem();
         miMulticastConfiguration = new ToolStripMenuItem();
+        miSaveConfigurationToDb = new ToolStripMenuItem();
         miDevicesGroup = new ToolStripMenuItem();
         miSetMac = new ToolStripMenuItem();
         miSetNet = new ToolStripMenuItem();
@@ -108,7 +109,22 @@ partial class fMain : Form
         // 
         // miDevice
         // 
-        miDevice.DropDownItems.AddRange(new ToolStripItem[] { miEditor, miSaveConfiguration, miLoadConfiguration, miMulticastConfiguration, miDevicesGroup, miSetMac, miSetNet, miSetName, miSetUuid, miFirmware, miBackup, miResetBackup });
+        miDevice.DropDownItems.AddRange(new ToolStripItem[]
+        {
+            miEditor,
+            miSaveConfiguration,
+            miSaveConfigurationToDb,
+            miLoadConfiguration,
+            miMulticastConfiguration,
+            miDevicesGroup,
+            miSetMac,
+            miSetNet,
+            miSetName,
+            miSetUuid,
+            miFirmware,
+            miBackup,
+            miResetBackup
+        }); 
         miDevice.Name = "miDevice";
         miDevice.Size = new Size(82, 20);
         miDevice.Text = "Устройство";
@@ -127,6 +143,12 @@ partial class fMain : Form
         miSaveConfiguration.Size = new Size(302, 22);
         miSaveConfiguration.Text = "Сохранить конфигурацию";
         miSaveConfiguration.Click += miSaveConfiguration_Click;
+
+        miSaveConfigurationToDb.Enabled = false;
+        miSaveConfigurationToDb.Name = "miSaveConfigurationToDb";
+        miSaveConfigurationToDb.Size = new Size(302, 22);
+        miSaveConfigurationToDb.Text = "Сохранить конфигурацию в БД";
+        miSaveConfigurationToDb.Click += miSaveConfigurationToDb_Click;
         // 
         // miLoadConfiguration
         // 
@@ -322,4 +344,5 @@ partial class fMain : Form
     private ToolStripMenuItem bdDelete;
     private ToolStripMenuItem miDevicesGroup;
     private ToolStripMenuItem miMulticastConfiguration;
+    private ToolStripMenuItem miSaveConfigurationToDb;
 }

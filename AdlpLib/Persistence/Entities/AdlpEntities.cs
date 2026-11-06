@@ -11,7 +11,8 @@ public sealed class DeviceEntity
     public string Name { get; set; } = string.Empty;
     public string ConfigType { get; set; } = string.Empty;
     public string DeviceType { get; set; } = string.Empty;
-    public int? SID { get; set; }
+    public string? PkListSid { get; set; }
+    public ListSidEntity? SidRecord { get; set; }
     public Guid? Uuid { get; set; }
     public string Mac { get; set; } = string.Empty;
     public string Ip { get; set; } = string.Empty;
@@ -256,4 +257,21 @@ public sealed class DeviceMulticastSubscriptionEntity
     public int Slot { get; set; }
 
     public string MulticastAddress { get; set; } = string.Empty;
+}
+
+public sealed class ListSidEntity
+{
+    public string PkListSid { get; set; } = string.Empty;
+
+    public string NameObjSid { get; set; } = string.Empty;
+
+    public int IdTxtDCon { get; set; }
+
+    public string? Comment { get; set; }
+
+    public string RegWebUser { get; set; } = string.Empty;
+
+    public DateTime? DateRec { get; set; }
+
+    public DateTime DateRecOn { get; set; }
 }

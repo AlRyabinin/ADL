@@ -1,8 +1,12 @@
-﻿namespace AdlpdsConfig.Controls.Devices
+﻿using System.ComponentModel;
+using System.Drawing;
+using System.Windows.Forms;
+
+namespace AdlpdsConfig.Controls.Devices
 {
     partial class EditPuParametersForm
     {
-        private System.ComponentModel.IContainer components = null;
+        private IContainer components = null;
 
         protected override void Dispose(bool disposing)
         {
@@ -20,7 +24,7 @@
             lblName = new Label();
             _txtName = new TextBox();
             lblSID = new Label();
-            _udSID = new NumericUpDown();
+            _cbSid = new ComboBox();
             lblMac = new Label();
             _txtMac = new TextBox();
             lblIp = new Label();
@@ -32,7 +36,7 @@
             _tablesTab = new TabControl();
             btnSave = new Button();
             btnCancel = new Button();
-            ((System.ComponentModel.ISupportInitialize)_udSID).BeginInit();
+            _btnManageSid = new Button();
             SuspendLayout();
             // 
             // lblName
@@ -60,13 +64,14 @@
             lblSID.TabIndex = 15;
             lblSID.Text = "SID:";
             // 
-            // _udSID
+            // _cbSid
             // 
-            _udSID.Location = new Point(12, 71);
-            _udSID.Maximum = new decimal(new int[] { int.MaxValue, 0, 0, 0 });
-            _udSID.Name = "_udSID";
-            _udSID.Size = new Size(116, 23);
-            _udSID.TabIndex = 16;
+            _cbSid.DropDownStyle = ComboBoxStyle.DropDownList;
+            _cbSid.FormattingEnabled = true;
+            _cbSid.Location = new Point(12, 71);
+            _cbSid.Name = "_cbSid";
+            _cbSid.Size = new Size(128, 23);
+            _cbSid.TabIndex = 2;
             // 
             // lblMac
             // 
@@ -163,13 +168,24 @@
             btnCancel.Text = "Отмена";
             btnCancel.UseVisualStyleBackColor = true;
             // 
+            // _btnManageSid
+            // 
+            _btnManageSid.Location = new Point(147, 69);
+            _btnManageSid.Name = "_btnManageSid";
+            _btnManageSid.Size = new Size(101, 23);
+            _btnManageSid.TabIndex = 17;
+            _btnManageSid.Text = "Управление SID";
+            _btnManageSid.UseVisualStyleBackColor = true;
+            _btnManageSid.Click += _btnManageSid_Click;
+            // 
             // EditPuParametersForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             CancelButton = btnCancel;
             ClientSize = new Size(532, 472);
-            Controls.Add(_udSID);
+            Controls.Add(_btnManageSid);
+            Controls.Add(_cbSid);
             Controls.Add(lblSID);
             Controls.Add(btnCancel);
             Controls.Add(btnSave);
@@ -189,27 +205,27 @@
             Name = "EditPuParametersForm";
             StartPosition = FormStartPosition.CenterParent;
             Text = "Параметры устройства";
-            ((System.ComponentModel.ISupportInitialize)_udSID).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
 
         #endregion
 
-        private System.Windows.Forms.Label lblName;
-        private System.Windows.Forms.TextBox _txtName;
-        private System.Windows.Forms.Label lblSID;
-        private System.Windows.Forms.NumericUpDown _udSID;
-        private System.Windows.Forms.Label lblMac;
-        private System.Windows.Forms.TextBox _txtMac;
-        private System.Windows.Forms.Label lblIp;
-        private System.Windows.Forms.TextBox _txtIp;
-        private System.Windows.Forms.Label lblMask;
-        private System.Windows.Forms.TextBox _txtMask;
-        private System.Windows.Forms.Label lblGateway;
-        private System.Windows.Forms.TextBox _txtGateway;
-        private System.Windows.Forms.TabControl _tablesTab;
-        private System.Windows.Forms.Button btnSave;
-        private System.Windows.Forms.Button btnCancel;
+        private Label lblName;
+        private TextBox _txtName;
+        private Label lblSID;
+        private ComboBox _cbSid;
+        private Label lblMac;
+        private TextBox _txtMac;
+        private Label lblIp;
+        private TextBox _txtIp;
+        private Label lblMask;
+        private TextBox _txtMask;
+        private Label lblGateway;
+        private TextBox _txtGateway;
+        private TabControl _tablesTab;
+        private Button btnSave;
+        private Button btnCancel;
+        private Button _btnManageSid;
     }
 }

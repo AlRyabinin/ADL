@@ -38,9 +38,10 @@
             lblConveyorCount = new Label();
             tablesTab = new TabControl();
             label5 = new Label();
-            _udSID = new NumericUpDown();
+            _cbSid = new ComboBox();
             label6 = new Label();
             textBox1 = new TextBox();
+            _btnManageSid = new Button();
             tabPagePictures.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)PicturesGrid).BeginInit();
             tabPageChannels.SuspendLayout();
@@ -48,14 +49,13 @@
             tabPageConveyors.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)ConveyorsGrid).BeginInit();
             tablesTab.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)_udSID).BeginInit();
             SuspendLayout();
             // 
             // NameTextBox
             // 
             NameTextBox.Location = new Point(12, 27);
             NameTextBox.Name = "NameTextBox";
-            NameTextBox.Size = new Size(236, 23);
+            NameTextBox.Size = new Size(259, 23);
             NameTextBox.TabIndex = 0;
             // 
             // label1
@@ -89,7 +89,7 @@
             // 
             // MacTextBox
             // 
-            MacTextBox.Location = new Point(259, 27);
+            MacTextBox.Location = new Point(297, 27);
             MacTextBox.Name = "MacTextBox";
             MacTextBox.Size = new Size(236, 23);
             MacTextBox.TabIndex = 4;
@@ -97,7 +97,7 @@
             // 
             // IpTextBox
             // 
-            IpTextBox.Location = new Point(259, 71);
+            IpTextBox.Location = new Point(297, 71);
             IpTextBox.Name = "IpTextBox";
             IpTextBox.Size = new Size(236, 23);
             IpTextBox.TabIndex = 5;
@@ -106,7 +106,7 @@
             // label2
             // 
             label2.AutoSize = true;
-            label2.Location = new Point(259, 9);
+            label2.Location = new Point(297, 9);
             label2.Name = "label2";
             label2.Size = new Size(33, 15);
             label2.TabIndex = 6;
@@ -114,7 +114,7 @@
             // 
             // MaskTextBox
             // 
-            MaskTextBox.Location = new Point(259, 115);
+            MaskTextBox.Location = new Point(297, 115);
             MaskTextBox.Name = "MaskTextBox";
             MaskTextBox.Size = new Size(236, 23);
             MaskTextBox.TabIndex = 7;
@@ -123,7 +123,7 @@
             // label3
             // 
             label3.AutoSize = true;
-            label3.Location = new Point(259, 53);
+            label3.Location = new Point(297, 53);
             label3.Name = "label3";
             label3.Size = new Size(20, 15);
             label3.TabIndex = 8;
@@ -132,7 +132,7 @@
             // label4
             // 
             label4.AutoSize = true;
-            label4.Location = new Point(259, 97);
+            label4.Location = new Point(297, 97);
             label4.Name = "label4";
             label4.Size = new Size(38, 15);
             label4.TabIndex = 9;
@@ -257,17 +257,19 @@
             label5.TabIndex = 12;
             label5.Text = "SID:";
             // 
-            // _udSID
+            // _cbSid
             // 
-            _udSID.Location = new Point(12, 71);
-            _udSID.Name = "_udSID";
-            _udSID.Size = new Size(118, 23);
-            _udSID.TabIndex = 13;
+            _cbSid.DropDownStyle = ComboBoxStyle.DropDownList;
+            _cbSid.FormattingEnabled = true;
+            _cbSid.Location = new Point(12, 71);
+            _cbSid.Name = "_cbSid";
+            _cbSid.Size = new Size(152, 23);
+            _cbSid.TabIndex = 13;
             // 
             // label6
             // 
             label6.AutoSize = true;
-            label6.Location = new Point(259, 141);
+            label6.Location = new Point(297, 141);
             label6.Name = "label6";
             label6.Size = new Size(43, 15);
             label6.TabIndex = 15;
@@ -275,19 +277,30 @@
             // 
             // textBox1
             // 
-            textBox1.Location = new Point(259, 159);
+            textBox1.Location = new Point(297, 159);
             textBox1.Name = "textBox1";
             textBox1.Size = new Size(236, 23);
             textBox1.TabIndex = 14;
+            // 
+            // _btnManageSid
+            // 
+            _btnManageSid.Location = new Point(170, 70);
+            _btnManageSid.Name = "_btnManageSid";
+            _btnManageSid.Size = new Size(101, 23);
+            _btnManageSid.TabIndex = 16;
+            _btnManageSid.Text = "Управление SID";
+            _btnManageSid.UseVisualStyleBackColor = true;
+            _btnManageSid.Click += _btnManageSid_Click;
             // 
             // EditNetGateParametersForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(552, 507);
+            Controls.Add(_btnManageSid);
             Controls.Add(label6);
             Controls.Add(textBox1);
-            Controls.Add(_udSID);
+            Controls.Add(_cbSid);
             Controls.Add(label5);
             Controls.Add(tablesTab);
             Controls.Add(label4);
@@ -313,7 +326,6 @@
             tabPageConveyors.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)ConveyorsGrid).EndInit();
             tablesTab.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)_udSID).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -337,11 +349,12 @@
         private DataGridView ConveyorsGrid;
         private TabControl tablesTab;
         private Label label5;
-        private NumericUpDown _udSID;
+        private ComboBox _cbSid;
         private Label lblConveyorCount;
         private ComboBox _cbConveyorCount;
         private Button btnConveyorProps;
         private Label label6;
         private TextBox textBox1;
+        private Button _btnManageSid;
     }
 }

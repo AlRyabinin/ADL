@@ -478,7 +478,7 @@ public sealed partial class MainForm : Form
         _targetAddress.Enabled = !anyRunning;
         _targetPort.Enabled = !anyRunning;
         _grid.ReadOnly = true;
-        _status.Text = $"В списке: {_devices.Count}; запущено: {_servers.Count}. Добавление и удаление доступны без остановки остальных устройств.";
+        _status.Text = $"В списке: {_devices.Count}; запущено: {_servers.Count}.";
     }
 
     private void AppendLog(string message)

@@ -227,18 +227,20 @@ namespace AdlpdsConfig.Controls
                         $"Устройство поддерживает максимум {AdlpdsService.MaxIgmpSlots}.");
                 }
 
-                cfg.Subscriptions = merged;
+                if(merged.Count != 0)
+                {
+                    cfg.Subscriptions = merged;
 
-                await _repository.SaveMulticastSettingsAsync(
-                    _deviceId,
-                    cfg.OwnAddress,
-                    cfg.Subscriptions);
+                    await _repository.SaveMulticastSettingsAsync(
+                        _deviceId,
+                        cfg.OwnAddress,
+                        cfg.Subscriptions);
 
-                if(IsDisposed)
-                    return;
+                    if(IsDisposed)
+                        return;
 
-                _subscriptions.Lines = merged.ToArray();
-
+                    _subscriptions.Lines = merged.ToArray();
+                }
                 if(addedCount > 0)
                 {
                     _svc.WriteMulticast(_device, cfg);

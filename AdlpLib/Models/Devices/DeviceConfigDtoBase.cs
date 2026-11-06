@@ -39,7 +39,7 @@ namespace AdlpLib.Models.Devices
         };
 
         [JsonPropertyOrder(2)]
-        public int SID { get; set; }
+        public string? PkListSid { get; set; }
 
         [JsonPropertyOrder(3)]
         public string Mac { get; set; }

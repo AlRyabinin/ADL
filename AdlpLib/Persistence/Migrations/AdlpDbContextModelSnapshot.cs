@@ -100,8 +100,11 @@ namespace AdlpLib.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("");
 
-                    b.Property<int?>("SID")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("PkListSid")
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("PKlistSID")
+                        .IsFixedLength();
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("TEXT");
@@ -114,6 +117,8 @@ namespace AdlpLib.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PkListSid");
 
                     b.HasIndex("Uuid", "Block")
                         .IsUnique();
@@ -380,6 +385,49 @@ namespace AdlpLib.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ExecStreams", (string)null);
+                });
+
+            modelBuilder.Entity("AdlpLib.Persistence.Entities.ListSidEntity", b =>
+                {
+                    b.Property<string>("PkListSid")
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("PKlistSID")
+                        .IsFixedLength();
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("comment");
+
+                    b.Property<DateTime?>("DateRec")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("DateRec");
+
+                    b.Property<DateTime>("DateRecOn")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("DateRecOn");
+
+                    b.Property<int>("IdTxtDCon")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("idtxtDCon");
+
+                    b.Property<string>("NameObjSid")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("NameObjSID");
+
+                    b.Property<string>("RegWebUser")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("regWebUser");
+
+                    b.HasKey("PkListSid");
+
+                    b.ToTable("listSID", (string)null);
                 });
 
             modelBuilder.Entity("AdlpLib.Persistence.Entities.NetGateChannelEntity", b =>
@@ -874,6 +922,16 @@ namespace AdlpLib.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("PuPictures", (string)null);
+                });
+
+            modelBuilder.Entity("AdlpLib.Persistence.Entities.DeviceEntity", b =>
+                {
+                    b.HasOne("AdlpLib.Persistence.Entities.ListSidEntity", "SidRecord")
+                        .WithMany()
+                        .HasForeignKey("PkListSid")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("SidRecord");
                 });
 
             modelBuilder.Entity("AdlpLib.Persistence.Entities.DeviceGroupDeviceEntity", b =>

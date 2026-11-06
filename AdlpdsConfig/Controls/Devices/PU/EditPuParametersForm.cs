@@ -1,6 +1,8 @@
-﻿using AdlpLib.Core;
+﻿using AdlpLib.Configuration.Application;
+using AdlpLib.Core;
 using AdlpLib.LiveConfig;
 using AdlpLib.Models.Devices.PU;
+using AdlpLib.Persistence.Entities;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -13,6 +15,8 @@ namespace AdlpdsConfig.Controls.Devices
 {
     public partial class EditPuParametersForm : Form
     {
+        private readonly DeviceConfigRepository _repository;
+
         public PuConfigDtoBase CurrentDevice { get; set; }
 
         private BindingList<LiveControlChannelCfg> _puChannels;
@@ -24,9 +28,11 @@ namespace AdlpdsConfig.Controls.Devices
 
         private NumericUpDown _udPriority, _udPicSwitch, _udPageCount, _udSwapX, _udSwapY, _udBrightness, _udBrightnessSleep, _udSleepTimeout;
 
-        public EditPuParametersForm(PuConfigDtoBase device)
+        public EditPuParametersForm(PuConfigDtoBase device, IReadOnlyList<ListSidEntity> sidRecords, DeviceConfigRepository repository)
         {
             InitializeComponent();
+
+            _repository = repository;
 
             CurrentDevice = device;
 
@@ -43,10 +49,49 @@ namespace AdlpdsConfig.Controls.Devices
             _txtIp.Text = device.Ip ?? "";
             _txtMask.Text = device.Mask ?? "";
             _txtGateway.Text = device.Gateway ?? "";
-            _udSID.Value = device.SID;
+            LoadSidRecords(sidRecords, device.PkListSid);
 
             LoadTabs();
             LoadData();
+        }
+
+        private sealed class SidComboItem
+        {
+            public string? Key { get; set; }
+            public string Caption { get; set; } = "";
+        }
+
+        private void LoadSidRecords(IReadOnlyList<ListSidEntity> records, string? selectedKey)
+        {
+            var items = new List<SidComboItem>
+            {
+                new()
+                {
+                    Key = null,
+                    Caption = "— Не назначен —"
+                }
+            };
+
+            if(records != null)
+            {
+                items.AddRange(records.Select(x => new SidComboItem
+                {
+                    Key = x.PkListSid?.Trim(),
+                    Caption = $"{x.NameObjSid} ({x.PkListSid})"
+                }));
+            }
+
+            _cbSid.DisplayMember = nameof(SidComboItem.Caption);
+            _cbSid.ValueMember = nameof(SidComboItem.Key);
+            _cbSid.DataSource = items;
+
+            int selectedIndex = items.FindIndex(x =>
+                string.Equals(
+                    x.Key?.Trim(),
+                    selectedKey?.Trim(),
+                    StringComparison.OrdinalIgnoreCase));
+
+            _cbSid.SelectedIndex = selectedIndex >= 0 ? selectedIndex : 0;
         }
 
         private void LoadTabs()
@@ -204,6 +249,10 @@ namespace AdlpdsConfig.Controls.Devices
 
         private void _txtMac_Validating(object sender, CancelEventArgs e)
         {
+            // MAC не обязателен. Проверяем формат только если поле заполнено.
+            if(string.IsNullOrWhiteSpace(_txtMac.Text))
+                return;
+
             if(!IsValidMac(_txtMac.Text))
             {
                 MessageBox.Show("Некорректный MAC-адрес!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -236,7 +285,7 @@ namespace AdlpdsConfig.Controls.Devices
             CurrentDevice.Ip = _txtIp.Text;
             CurrentDevice.Mask = _txtMask.Text;
             CurrentDevice.Gateway = _txtGateway.Text;
-            CurrentDevice.SID = (int)_udSID.Value;
+            CurrentDevice.PkListSid = _cbSid.SelectedValue as string;
 
             CurrentDevice.Priority = (int)_udPriority.Value;
             CurrentDevice.PictureSwitchTime = (int)_udPicSwitch.Value;
@@ -272,6 +321,17 @@ namespace AdlpdsConfig.Controls.Devices
             public int Value { get; }
             public string Name { get; }
             public ChannelTypeItem(int value, string name) { Value = value; Name = name; }
+        }
+
+        private async void _btnManageSid_Click(object sender, EventArgs e)
+        {
+            using var form = new ListSidManagerForm(_repository);
+            form.ShowDialog(this);
+
+            var records = await _repository.GetListSidsAsync();
+            LoadSidRecords(
+                records,
+                form.CreatedPkListSid ?? CurrentDevice.PkListSid);
         }
     }
 }

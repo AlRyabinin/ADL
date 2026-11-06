@@ -1,12 +1,13 @@
-﻿using AdlpLib.Models.Devices;
+﻿using AdlpLib.Configuration.Application;
+using AdlpLib.Models.Devices;
 using AdlpLib.Models.Devices.NetGate;
+using AdlpLib.Persistence.Entities;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 namespace AdlpdsConfig.Controls.Devices.NetGate
 {
@@ -15,6 +16,8 @@ namespace AdlpdsConfig.Controls.Devices.NetGate
     /// </summary>
     public partial class EditNetGateParametersForm : Form
     {
+        private readonly DeviceConfigRepository _repository;
+
         /// <summary>Редактируемое устройство.</summary>
         public NetGateConfigDto CurrentDevice { get; set; }
 
@@ -27,17 +30,65 @@ namespace AdlpdsConfig.Controls.Devices.NetGate
             InitializeComponent();
         }
 
-        public EditNetGateParametersForm(NetGateConfigDto device)
+        public EditNetGateParametersForm(NetGateConfigDto device, IReadOnlyList<ListSidEntity> sidRecords, DeviceConfigRepository repository)
         {
             InitializeComponent();
+
+            _repository = repository;
             CurrentDevice = device ?? throw new ArgumentNullException(nameof(device));
 
             NameTextBox.Text = device.Name ?? string.Empty;
             MacTextBox.Text = device.Mac ?? string.Empty;
             IpTextBox.Text = device.Ip ?? string.Empty;
             MaskTextBox.Text = device.Mask ?? string.Empty;
+            textBox1.Text = device.Gateway ?? string.Empty;
 
+            LoadSidRecords(sidRecords ?? Array.Empty<ListSidEntity>(), device.PkListSid);
             LoadAllTabs();
+        }
+
+        private sealed class SidComboItem
+        {
+            public string? Key { get; set; }
+            public string Caption { get; set; } = string.Empty;
+        }
+
+        private void LoadSidRecords(
+            IReadOnlyList<ListSidEntity> records,
+            string? selectedKey)
+        {
+            var items = new List<SidComboItem>
+            {
+                new() { Key = null, Caption = "— Не назначен —" }
+            };
+
+            items.AddRange(records.Select(x => new SidComboItem
+            {
+                Key = x.PkListSid,
+                Caption = $"{x.NameObjSid} ({x.PkListSid})"
+            }));
+
+            // Не теряем ранее сохранённый ключ, даже если вызывающий код
+            // пока не передал полный список listSID.
+            if(!string.IsNullOrWhiteSpace(selectedKey) &&
+               !items.Any(x => string.Equals(
+                   x.Key, selectedKey, StringComparison.OrdinalIgnoreCase)))
+            {
+                items.Add(new SidComboItem
+                {
+                    Key = selectedKey,
+                    Caption = $"Не найден в listSID ({selectedKey})"
+                });
+            }
+
+            _cbSid.DisplayMember = nameof(SidComboItem.Caption);
+            _cbSid.ValueMember = nameof(SidComboItem.Key);
+            _cbSid.DataSource = items;
+
+            int selectedIndex = items.FindIndex(x =>
+                string.Equals(x.Key, selectedKey, StringComparison.OrdinalIgnoreCase));
+
+            _cbSid.SelectedIndex = selectedIndex >= 0 ? selectedIndex : 0;
         }
 
         // =====================================================================
@@ -203,7 +254,7 @@ namespace AdlpdsConfig.Controls.Devices.NetGate
             using var dlg = new ConveyorPropertiesForm(cv);
             if(dlg.ShowDialog(this) == DialogResult.OK)
             {
-                ConveyorsGrid.Refresh(); 
+                ConveyorsGrid.Refresh();
             }
         }
 
@@ -252,7 +303,9 @@ namespace AdlpdsConfig.Controls.Devices.NetGate
 
         private void MacTextBox_Validating(object sender, CancelEventArgs e)
         {
-            if(!IsValidMac(MacTextBox.Text))
+            // MAC необязателен. Проверяем формат, только если поле заполнено.
+            if(!string.IsNullOrWhiteSpace(MacTextBox.Text) &&
+               !IsValidMac(MacTextBox.Text))
             {
                 MessageBox.Show("Некорректный MAC-адрес!", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -319,10 +372,11 @@ namespace AdlpdsConfig.Controls.Devices.NetGate
                 return;
             }
 
-            // 2. MAC
-            if(string.IsNullOrWhiteSpace(MacTextBox.Text) || !IsValidMac(MacTextBox.Text))
+            // 2. MAC необязателен, но если указан — должен иметь корректный формат.
+            if(!string.IsNullOrWhiteSpace(MacTextBox.Text) &&
+               !IsValidMac(MacTextBox.Text))
             {
-                MessageBox.Show("Укажите корректный MAC-адрес.", "Внимание",
+                MessageBox.Show("Укажите корректный MAC-адрес или оставьте поле пустым.", "Внимание",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 MacTextBox.Focus();
                 return;
@@ -346,14 +400,7 @@ namespace AdlpdsConfig.Controls.Devices.NetGate
                 return;
             }
 
-            // 5. SID (если 0 — недопустим, поправьте под ваши требования)
-            if(_udSID.Value <= 0)
-            {
-                MessageBox.Show("Укажите SID больше нуля.", "Внимание",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                _udSID.Focus();
-                return;
-            }
+            // 5. SID необязателен. Пустой выбор означает NULL в Devices.PKlistSID.
 
             // 6. Конвейеры: ровно 4 или 8, каждый полностью заполнен
             if(_conveyors.Count != 4 && _conveyors.Count != 8)
@@ -397,7 +444,8 @@ namespace AdlpdsConfig.Controls.Devices.NetGate
             CurrentDevice.Mac = MacTextBox.Text.Trim();
             CurrentDevice.Ip = IpTextBox.Text.Trim();
             CurrentDevice.Mask = MaskTextBox.Text.Trim();
-            CurrentDevice.SID = (int)_udSID.Value;
+            CurrentDevice.Gateway = textBox1.Text.Trim();
+            CurrentDevice.PkListSid = _cbSid.SelectedValue as string;
 
             CurrentDevice.ConveyorCount = _conveyors.Count;
             CurrentDevice.Conveyors = _conveyors.ToList();
@@ -412,6 +460,17 @@ namespace AdlpdsConfig.Controls.Devices.NetGate
         {
             DialogResult = DialogResult.Cancel;
             Close();
+        }
+
+        private async void _btnManageSid_Click(object sender, EventArgs e)
+        {
+            using var form = new ListSidManagerForm(_repository);
+            form.ShowDialog(this);
+
+            var records = await _repository.GetListSidsAsync();
+            LoadSidRecords(
+                records,
+                form.CreatedPkListSid ?? CurrentDevice.PkListSid);
         }
     }
 }

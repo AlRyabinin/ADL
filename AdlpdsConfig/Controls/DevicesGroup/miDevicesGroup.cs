@@ -282,18 +282,20 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                     return;
                 }
 
+                var sidRecords = await _devicesRepository.GetListSidsAsync();
+
                 bool editOk;
                 switch(newDevice)
                 {
                     case NetGateConfigDto ng:
-                        using(var editNgDlg = new EditNetGateParametersForm(ng))
+                        using(var editNgDlg = new EditNetGateParametersForm(ng, sidRecords, _devicesRepository))
                         {
                             editOk = editNgDlg.ShowDialog(this) == DialogResult.OK;
                         }
                         break;
 
                     case PuConfigDtoBase pu:
-                        using(var editDlg = new EditPuParametersForm(pu))
+                        using(var editDlg = new EditPuParametersForm(pu, sidRecords, _devicesRepository))
                         {
                             editOk = editDlg.ShowDialog(this) == DialogResult.OK;
                         }
@@ -618,19 +620,21 @@ namespace AdlpdsConfig.Controls.DevicesGroup
                     return;
                 }
 
+                var sidRecords = await _devicesRepository.GetListSidsAsync();
+
                 bool editOk = false;
 
                 switch(freshDevice)
                 {
                     case NetGateConfigDto ng:
-                        using(var editNgDlg = new EditNetGateParametersForm(ng))
+                        using(var editNgDlg = new EditNetGateParametersForm(ng, sidRecords, _devicesRepository))
                         {
                             editOk = editNgDlg.ShowDialog(this) == DialogResult.OK;
                         }
                         break;
 
                     case PuConfigDtoBase pu:
-                        using(var editPuDlg = new EditPuParametersForm(pu))
+                        using(var editPuDlg = new EditPuParametersForm(pu, sidRecords, _devicesRepository))
                         {
                             editOk = editPuDlg.ShowDialog(this) == DialogResult.OK;
                         }

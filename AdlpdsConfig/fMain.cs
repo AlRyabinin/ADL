@@ -123,6 +123,154 @@ namespace AdlpdsConfig
             return Svc.GetDevices().FirstOrDefault(d => EndpointKey(d) == devKey);
         }
 
+        private async void miSaveConfigurationToDb_Click(object sender, EventArgs e)
+        {
+            var device = GetSelectedDevice();
+            if(device == null)
+                return;
+
+            if(_repo == null)
+            {
+                MessageBox.Show("Нет подключения к БД конфигураций.");
+                return;
+            }
+
+            using var dlg = new fConfSaver(Svc, device)
+            {
+                StartPosition = FormStartPosition.CenterParent
+            };
+
+            if(dlg.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            if(!dlg.ConfigurationLoaded)
+            {
+                MessageBox.Show(
+                    "Конфигурация не была успешно прочитана. Сохранение отменено.",
+                    "Ошибка",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var config = dlg.ResultConfig;
+            if(config == null)
+                return;
+
+            try
+            {
+                long? existingId = await FindExistingDeviceIdAsync(config);
+
+                if(existingId.HasValue)
+                {
+                    var existingConfig = await _repo.LoadAsync(existingId.Value);
+
+                    config.Id = existingId.Value;
+
+                    // Не затираем назначенный SID и имя устройства.
+                    if(existingConfig != null)
+                    {
+                        config.PkListSid = existingConfig.PkListSid;
+
+                        if(!string.IsNullOrWhiteSpace(existingConfig.Name))
+                            config.Name = existingConfig.Name;
+                    }
+                }
+                else if((!config.Uuid.HasValue || config.Uuid.Value == Guid.Empty) &&
+                        string.IsNullOrWhiteSpace(config.Mac))
+                {
+                    throw new InvalidOperationException(
+                        "Устройство не передало UUID и MAC-адрес.");
+                }
+
+                long savedId = await _repo.SaveAsync(config);
+
+                MessageBox.Show(
+                    $"Конфигурация сохранена в БД.\n\nID записи: {savedId}",
+                    "Сохранение завершено",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch(Exception ex)
+            {
+                MessageBox.Show(
+                    $"Ошибка сохранения:\n{ex.GetBaseException().Message}",
+                    "Ошибка",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task<long?> FindExistingDeviceIdAsync(
+    DeviceConfigDtoBase config)
+        {
+            if(_repo == null)
+                return null;
+
+            if(config.Uuid.HasValue && config.Uuid.Value != Guid.Empty)
+            {
+                long? id = await _repo.FindDeviceIdByUuidAndBlockAsync(
+                    config.Uuid.Value,
+                    config.Block);
+
+                if(id.HasValue)
+                    return id;
+            }
+
+            if(!string.IsNullOrWhiteSpace(config.Mac))
+            {
+                string configType = DeviceConfigRepository.ConfigTypeOf(config);
+
+                var matches = (await _repo.GetAllHeadersAsync())
+                    .Where(x =>
+                        x.Block == config.Block &&
+                        string.Equals(
+                            x.ConfigType,
+                            configType,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            x.Mac,
+                            config.Mac.Trim(),
+                            StringComparison.OrdinalIgnoreCase))
+                    .Take(2)
+                    .ToList();
+
+                if(matches.Count > 1)
+                    throw new InvalidOperationException(
+                        $"Найдено несколько устройств с MAC {config.Mac}.");
+
+                if(matches.Count == 1)
+                    return matches[0].Id;
+            }
+
+            return null;
+        }
+
+        private void UpdateDatabaseSaveButton()
+        {
+            if(IsDisposed || Disposing || !IsHandleCreated)
+                return;
+
+            if(InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke(new Action(UpdateDatabaseSaveButton));
+                }
+                catch(InvalidOperationException)
+                {
+                    
+                }
+
+                return;
+            }
+
+            var device = GetSelectedDevice();
+
+            miSaveConfigurationToDb.Enabled =
+                _repo != null;
+        }
+
         private void lDevices_SelectedIndexChanged(object? sender, EventArgs e)
         {
             var enabled = lDevices.SelectedItems.Count > 0;
@@ -139,8 +287,27 @@ namespace AdlpdsConfig
 
         private void UpdateBackupButton()
         {
+            if(IsDisposed || Disposing || !IsHandleCreated)
+                return;
+
+            if(InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke(new Action(UpdateBackupButton));
+                }
+                catch(InvalidOperationException)
+                {
+                }
+
+                return;
+            }
+
             var devKey = GetSelectedDeviceKey();
-            miBackup.Enabled = devKey != null && mBackupSupport.TryGetValue(devKey, out bool supported) && supported;
+
+            miBackup.Enabled = devKey != null &&
+                mBackupSupport.TryGetValue(devKey, out bool supported) &&
+                supported;
         }
 
         private void miSaveConfiguration_Click(object sender, EventArgs e)
@@ -706,6 +873,8 @@ namespace AdlpdsConfig
                 await repo.EnsureSchemaAsync();
 
                 _repo = repo;
+
+                UpdateDatabaseSaveButton();
             }
             catch(Exception exc)
             {

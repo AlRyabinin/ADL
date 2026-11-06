@@ -18,6 +18,8 @@ namespace AdlpdsConfig.Controls
     {
         private bool _loadedFromConfig;
 
+        public bool ConfigurationLoaded { get; private set; }
+
         private readonly AdlpdsService Svc;
 
         public Device CurrentDevice { get; set; }
@@ -46,6 +48,8 @@ namespace AdlpdsConfig.Controls
         public void LoadFromConfig(PuColorConfigDto cfg)
         {
             _loadedFromConfig = true;
+
+            ConfigurationLoaded = true;
 
             FillCommon(cfg);
 
@@ -128,35 +132,79 @@ namespace AdlpdsConfig.Controls
 
         private void fConfSaver_Load(object sender, EventArgs e)
         {
-            if(DesignMode || CurrentDevice == null) return;
-
-            if(_loadedFromConfig) return;
+            if(DesignMode || CurrentDevice == null || _loadedFromConfig)
+                return;
 
             LoadMac();
-
             LoadIP();
-
             LoadMask();
-
             LoadGateway();
 
-            if(CurrentDevice.Name == "PU")
-                LoadConfig(LiveConfigDefaults.CreateControlDefault(CurrentDevice != null ? CurrentDevice.Block : 1, LiveDeviceTypes.IsColorPanel(CurrentDevice?.Name ?? "")));
-            else
+            string deviceType = CurrentDevice.Name ?? "";
+
+            if(IsControlDeviceType(deviceType))
             {
-                int count = CurrentDevice.Channels > 0 ? CurrentDevice.Channels : LiveConfigDefaults.ChannelsPerBlock;
+                bool sent = Svc.ReadControlConfig(CurrentDevice, (dev, cfg, ok) =>
+                {
+                    if(IsDisposed || !IsHandleCreated)
+                        return;
+
+                    BeginInvoke(new Action(() =>
+                    {
+                        if(IsDisposed)
+                            return;
+
+                        if(ok)
+                            LoadConfig(cfg);
+                        else
+                            ConfigurationLoaded = false;
+                    }));
+                });
+
+                if(!sent)
+                    ConfigurationLoaded = false;
+            }
+            else if(IsExecDeviceType(deviceType))
+            {
+                int count = CurrentDevice.Channels > 0
+                    ? CurrentDevice.Channels
+                    : LiveConfigDefaults.ChannelsPerBlock;
 
                 bool sent = Svc.ReadExecConfig(CurrentDevice, count, 2, (dev, cfg, ok) =>
-                 BeginInvoke(new Action(() =>
-                 {
-                     if(IsDisposed)
-                         return;
-                     if(ok)
-                         LoadConfig(cfg);
-                 })));
-            }
+                {
+                    if(IsDisposed || !IsHandleCreated)
+                        return;
 
-            
+                    BeginInvoke(new Action(() =>
+                    {
+                        if(IsDisposed)
+                            return;
+
+                        if(ok)
+                            LoadConfig(cfg);
+                        else
+                            ConfigurationLoaded = false;
+                    }));
+                });
+
+                if(!sent)
+                    ConfigurationLoaded = false;
+            }
+        }
+
+        private static bool IsControlDeviceType(string type)
+        {
+            return LiveDeviceTypes.IsControl(type) ||
+                   type.Equals("PU6", StringComparison.OrdinalIgnoreCase) ||
+                   type.Equals("PUBW", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsExecDeviceType(string type)
+        {
+            return LiveDeviceTypes.IsExec(type) ||
+                   type.Equals("EXEC", StringComparison.OrdinalIgnoreCase) ||
+                   type.Equals("DIM220", StringComparison.OrdinalIgnoreCase) ||
+                   type.Equals("DIMCABINET", StringComparison.OrdinalIgnoreCase);
         }
 
         private void udBlock_ValueChanged(object? sender, EventArgs e)
@@ -239,6 +287,8 @@ namespace AdlpdsConfig.Controls
 
             udBlock.Value = Math.Max(udBlock.Minimum, Math.Min(udBlock.Maximum, CurrentDevice.Block));
             UpdateBaseChannel();
+
+            ConfigurationLoaded = true;
         }
 
         private void LoadConfig(LiveControlConfig cfg)
@@ -271,6 +321,8 @@ namespace AdlpdsConfig.Controls
             });
 
             UpdateBaseChannel();
+
+            ConfigurationLoaded = true;
         }
 
         private DataGridView gridGroups, gridPictures, gridButtons;
@@ -571,52 +623,88 @@ namespace AdlpdsConfig.Controls
                 return;
             }
 
+            if(!_loadedFromConfig && !ConfigurationLoaded)
+            {
+                MessageBox.Show(
+                    "Дождитесь успешного чтения конфигурации устройства.",
+                    Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+
+                DialogResult = DialogResult.None;
+                return;
+            }
+
             ResultConfig = BuildResult();
 
             DialogResult = DialogResult.OK;
             Close();
         }
 
-        private DeviceConfigDtoBase BuildResult() => CurrentDevice.Name switch
+        private DeviceConfigDtoBase BuildResult()
         {
-            "PU" => new PuColorConfigDto
+            string type = CurrentDevice.Name ?? "";
+
+            if(IsControlDeviceType(type))
             {
-                Mac = MacValue.Text,
-                Ip = tbIp.Text,
-                Uuid = CurrentDevice.Uuid == Guid.Empty
-                    ? null
-                    : CurrentDevice.Uuid,
-                Mask = tbMask.Text,
-                Gateway = tbgw.Text,
-                Block = (int)udBlock.Value,
-                Brightness = (int)udBrightness.Value,
-                BrightnessSleep = (int)udBrightnessSleep.Value,
-                PageCount = (int)udPageCount.Value,
-                PictureSwitchTime = (int)udPicSwitch.Value,
-                Priority = (int)udPriority.Value,
-                SleepTimeout = (int)udSleepTimeout.Value,
-                SwapX = (int)udSwapX.Value,
-                SwapY = (int)udSwapY.Value,
-                Buttons = Buttons.ToList(),
-                Groups = Groups.ToList(),
-                Pictures = Pictures.ToList(),
-                Channels = PuChannels.ToList(),
-            },
-            _ => new ExecConfigDto
-            {
-                Mac = MacValue.Text,
-                Ip = tbIp.Text,
-                Uuid = CurrentDevice.Uuid == Guid.Empty
-                    ? null
-                    : CurrentDevice.Uuid,
-                Mask = tbMask.Text,
-                Gateway = tbgw.Text,
-                Block = (int)udBlock.Value,
-                BaseChannel = BaseChannelValue.Text,
-                Channels = ExecChannels.ToList(),
-                Streams = Streams.ToList()
+                PuConfigDtoBase pu =
+                    type.Equals("PU", StringComparison.OrdinalIgnoreCase)
+                        ? new PuColorConfigDto()
+                        : type.Equals("PU6", StringComparison.OrdinalIgnoreCase)
+                            ? new Pu6ConfigDto()
+                            : new PuBWConfigDto();
+
+                FillCommon(pu);
+
+                pu.Brightness = (int)udBrightness.Value;
+                pu.BrightnessSleep = (int)udBrightnessSleep.Value;
+                pu.PageCount = (int)udPageCount.Value;
+                pu.PictureSwitchTime = (int)udPicSwitch.Value;
+                pu.Priority = (int)udPriority.Value;
+                pu.SleepTimeout = (int)udSleepTimeout.Value;
+                pu.SwapX = (int)udSwapX.Value;
+                pu.SwapY = (int)udSwapY.Value;
+
+                pu.Channels = PuChannels.ToList();
+                pu.Groups = Groups.ToList();
+                pu.Pictures = Pictures.ToList();
+
+                pu.Buttons = pu is PuColorConfigDto
+                    ? Buttons.ToList()
+                    : new List<LiveControlButtonCfg>();
+
+                return pu;
             }
-        };
+
+            ExecConfigDto exec = type.ToUpperInvariant() switch
+            {
+                "IKB" => new IkbConfigDto(),
+                "DIM220" => new Dimmer220ConfigDto(),
+                "DIMCABINET" => new DimmerCabinetConfigDto(),
+                _ => new ExecConfigDto()
+            };
+
+            FillCommon(exec);
+
+            exec.BaseChannel = BaseChannelValue.Text;
+            exec.Channels = ExecChannels.ToList();
+            exec.Streams = Streams.ToList();
+
+            return exec;
+        }
+
+        private void FillCommon(DeviceConfigDtoBase cfg)
+        {
+            cfg.Name = CurrentDevice.Name ?? "Device";
+            cfg.Mac = MacValue.Text;
+            cfg.Ip = tbIp.Text;
+            cfg.Mask = tbMask.Text;
+            cfg.Gateway = tbgw.Text;
+            cfg.Block = (int)udBlock.Value;
+            cfg.Uuid = CurrentDevice.Uuid == Guid.Empty
+                ? null
+                : CurrentDevice.Uuid;
+        }
 
         private bool ValidateInputs()
         {

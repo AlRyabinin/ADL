@@ -284,7 +284,7 @@ END;", ct).ConfigureAwait(false);
             entity.Uuid = dto.Uuid.HasValue && dto.Uuid.Value != Guid.Empty ? dto.Uuid : null;
             entity.ConfigType = configType;
             entity.DeviceType = dto.DeviceType ?? string.Empty;
-            entity.SID = dto.SID;
+            entity.PkListSid = string.IsNullOrWhiteSpace(dto.PkListSid) ? null : dto.PkListSid.Trim();
             entity.Mac = dto.Mac ?? string.Empty;
             entity.Ip = dto.Ip ?? string.Empty;
             entity.Mask = dto.Mask ?? string.Empty;
@@ -610,13 +610,10 @@ END;", ct).ConfigureAwait(false);
 
             await PrepareConnectionAsync(db, ct);
 
-            var existing = await db.Devices
-                .SingleOrDefaultAsync(
-                    x => x.Uuid == uuid && x.Block == block,
-                    ct);
+            long? existingId = await db.Devices.AsNoTracking().Where(x => x.Uuid == uuid && x.Block == block).Select(x => (long?)x.Id).SingleOrDefaultAsync(ct);
 
-            if(existing != null)
-                return existing.Id;
+            if(existingId.HasValue)
+                return existingId.Value;
 
             string configType = GetConfigTypeFromDeviceName(deviceName);
 
@@ -709,12 +706,101 @@ END;", ct).ConfigureAwait(false);
             return dto;
         }
 
+        public async Task<ListSidEntity> CreateListSidAsync(string nameObjSid, string comment, CancellationToken ct = default)
+        {
+            if(_dbType != DatabaseType.MySQL)
+                throw new NotSupportedException(
+                    "Создание SID поддерживается только в MySQL.");
+
+            if(string.IsNullOrWhiteSpace(nameObjSid))
+                throw new ArgumentException("Укажите название SID.");
+
+            if(nameObjSid.Trim().Length > 64)
+                throw new ArgumentException(
+                    "Название не должно превышать 64 символа.");
+
+            comment ??= string.Empty;
+
+            if(comment.Length > 255)
+                throw new ArgumentException(
+                    "Комментарий не должен превышать 255 символов.");
+
+            string temporaryComment =
+                $"__ADL_CREATE_{Guid.NewGuid():N}";
+
+            await using var db = CreateDbContext();
+
+            await PrepareConnectionAsync(db, ct);
+
+            await using var tx =
+                await db.Database.BeginTransactionAsync(ct);
+
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SET @BDConfigADLDCon_regWebUser =
+                COALESCE(
+                    @BDConfigADLDCon_regWebUser,
+                    @app_user,
+                    USER()
+                );",
+                    ct);
+
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $@"INSERT INTO `listSID`
+                (`NameObjSID`, `idtxtDCon`, `comment`)
+              VALUES (
+                {nameObjSid.Trim()},
+                {10000},
+                {temporaryComment}
+              );",
+                    ct);
+
+                string generatedKey = await db.Database
+                    .SqlQueryRaw<string>(
+                        @"SELECT `PKlistSID` AS `Value`
+                  FROM `listSID`
+                  WHERE `comment` = {0}",
+                        temporaryComment)
+                    .SingleAsync(ct);
+
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $@"UPDATE `listSID`
+               SET `comment` = {comment}
+               WHERE `PKlistSID` = {generatedKey};",
+                    ct);
+
+                await tx.CommitAsync(ct);
+
+                return await db.ListSids
+                    .AsNoTracking()
+                    .SingleAsync(
+                        x => x.PkListSid == generatedKey,
+                        ct);
+            }
+            catch
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        }
+
+        public async Task<List<ListSidEntity>> GetListSidsAsync(CancellationToken ct = default)
+        {
+            await using var db = CreateDbContext();
+
+            return await db.ListSids
+                .AsNoTracking()
+                .OrderBy(x => x.NameObjSid)
+                .ToListAsync(ct);
+        }
+
         private static void CopyCommonToDto(DeviceEntity device, DeviceConfigDtoBase dto)
         {
             dto.Id = device.Id;
             dto.Uuid = device.Uuid;
             dto.Name = device.Name;
-            dto.SID = device.SID ?? 0;
+            dto.PkListSid = device.PkListSid;
             dto.Mac = device.Mac;
             dto.Ip = device.Ip;
             dto.Mask = device.Mask;
@@ -1485,174 +1571,6 @@ END;", ct).ConfigureAwait(false);
             {
                 sb.AppendLine("Ошибка чтения истории миграций:");
                 sb.AppendLine(ex.ToString());
-            }
-
-            if(_dbType == DatabaseType.MySQL)
-            {
-                try
-                {
-                    await db.Database.OpenConnectionAsync(ct);
-
-                    var conn = db.Database.GetDbConnection();
-
-                    await using(var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "SELECT DATABASE()";
-
-                        var database = await cmd.ExecuteScalarAsync(ct);
-
-                        sb.AppendLine();
-                        sb.AppendLine($"=== CURRENT DATABASE: {database} ===");
-                    }
-
-                    await using(var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-                            SELECT TABLE_NAME
-                            FROM information_schema.tables
-                            WHERE TABLE_SCHEMA = DATABASE()
-                            AND TABLE_NAME IN (
-                                'MulticastDevices',
-                                'DeviceMulticastAddresses',
-                                'DeviceMulticastSubscriptions'
-                            )
-                            ORDER BY TABLE_NAME;";
-
-                        await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-                        sb.AppendLine();
-                        sb.AppendLine("=== MULTICAST TABLES ===");
-
-                        while(await reader.ReadAsync(ct))
-                            sb.AppendLine(reader.GetString(0));
-                    }
-
-                    // Структура таблиц и collation.
-                    await using(var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLLATION_NAME
-FROM information_schema.COLUMNS
-WHERE TABLE_SCHEMA = DATABASE()
-AND TABLE_NAME IN (
-    'Devices',
-    'DeviceMulticastAddresses',
-    'DeviceMulticastSubscriptions'
-)
-ORDER BY TABLE_NAME, ORDINAL_POSITION;";
-
-                        await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-                        sb.AppendLine();
-                        sb.AppendLine("=== TABLE COLUMNS ===");
-
-                        while(await reader.ReadAsync(ct))
-                        {
-                            string collation = reader.IsDBNull(3)
-                                ? "-"
-                                : reader.GetString(3);
-
-                            sb.AppendLine(
-                                $"{reader.GetString(0)}.{reader.GetString(1)} | " +
-                                $"{reader.GetString(2)} | {collation}");
-                        }
-                    }
-
-                    // Количество сохранённых multicast-настроек.
-                    await using(var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-                            SELECT
-                                (SELECT COUNT(*) FROM DeviceMulticastAddresses),
-                                (SELECT COUNT(*) FROM DeviceMulticastSubscriptions);";
-
-                        await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-                        if(await reader.ReadAsync(ct))
-                        {
-                            sb.AppendLine();
-                            sb.AppendLine("=== MULTICAST ROW COUNTS ===");
-                            sb.AppendLine($"Addresses: {reader.GetInt64(0)}");
-                            sb.AppendLine($"Subscriptions: {reader.GetInt64(1)}");
-                        }
-                    }
-
-                    // Записи устройств и их MAC.
-                    await using(var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-                            SELECT Id, Mac, Block, ConfigType, Name
-                            FROM Devices
-                            ORDER BY Id
-                            LIMIT 30;";
-
-                        await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-                        sb.AppendLine();
-                        sb.AppendLine("=== DEVICES ===");
-
-                        while(await reader.ReadAsync(ct))
-                        {
-                            sb.AppendLine(
-                                $"Id={reader.GetInt64(0)}, " +
-                                $"Mac={reader.GetString(1)}, " +
-                                $"Block={reader.GetInt32(2)}, " +
-                                $"ConfigType={reader.GetString(3)}, " +
-                                $"Name={reader.GetString(4)}");
-                        }
-                    }
-
-                    await using(var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = @"
-                            SELECT
-                                a.DeviceMac,
-                                a.MultiCastAdress,
-                                d.Id,
-                                d.Mac,
-                                d.Block,
-                                d.ConfigType,
-                                d.Name
-                            FROM DeviceMulticastAddresses a
-                            LEFT JOIN Devices d
-                                ON REPLACE(REPLACE(REPLACE(
-                                    UPPER(TRIM(CONVERT(d.Mac USING utf8mb4))),
-                                    ':', ''), '-', ''), '.', '')
-                                    COLLATE utf8mb4_bin
-                                =
-                                   REPLACE(REPLACE(REPLACE(
-                                    UPPER(TRIM(CONVERT(a.DeviceMac USING utf8mb4))),
-                                    ':', ''), '-', ''), '.', '')
-                                    COLLATE utf8mb4_bin;";
-
-                        await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-                        sb.AppendLine();
-                        sb.AppendLine("=== MULTICAST DEVICE MATCH ===");
-
-                        while(await reader.ReadAsync(ct))
-                        {
-                            sb.AppendLine(
-                                $"DeviceMac={reader.GetString(0)}, " +
-                                $"OwnAddress={reader.GetString(1)}, " +
-                                $"DeviceId={(reader.IsDBNull(2) ? "NOT FOUND" : reader.GetInt64(2))}, " +
-                                $"DevicesMac={(reader.IsDBNull(3) ? "" : reader.GetString(3))}, " +
-                                $"Block={(reader.IsDBNull(4) ? "" : reader.GetInt32(4).ToString())}, " +
-                                $"ConfigType={(reader.IsDBNull(5) ? "" : reader.GetString(5))}, " +
-                                $"Name={(reader.IsDBNull(6) ? "" : reader.GetString(6))}");
-                        }
-                    }
-                }
-                catch(Exception ex)
-                {
-                    sb.AppendLine();
-                    sb.AppendLine("Ошибка проверки таблиц:");
-                    sb.AppendLine(ex.Message);
-                }
-                finally
-                {
-                    await db.Database.CloseConnectionAsync();
-                }
             }
 
             return sb.ToString();
