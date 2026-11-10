@@ -1,5 +1,5 @@
 using ADLDeviceEmulator.Models;
-using ADLDeviceEmulator.Protocol;
+using AdlpLib.Protocol;
 using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
@@ -12,7 +12,7 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
     private readonly VirtualDeviceConfig _config;
     private readonly IPEndPoint _statusTarget;
     private readonly object _sync = new();
-    private readonly Dictionary<ParamKey, AdlpdsProtocol.ParamValue> _values = new();
+    private readonly Dictionary<ParamKey, AdlpFrame.ParamValue> _values = new();
     private readonly string[] _igmpSlots = new string[32];
 
     private UdpClient? _udp;
@@ -66,36 +66,36 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
     private void InitializeParameterStore(IPAddress bindAddress)
     {
         _bindAddress = bindAddress;
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceName, AdlpdsProtocol.ParamValue.String(_config.DeviceName));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceBlock, AdlpdsProtocol.ParamValue.U16((ushort)Math.Clamp(_config.Block, 0, ushort.MaxValue)));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceIp, AdlpdsProtocol.ParamValue.U32(AdlpdsProtocol.IpToU32(_config.IpAddress)));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceMask, AdlpdsProtocol.ParamValue.U32(AdlpdsProtocol.IpToU32(_config.Mask)));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceGateway, AdlpdsProtocol.ParamValue.U32(AdlpdsProtocol.IpToU32(_config.Gateway)));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceConfiguration, AdlpdsProtocol.ParamValue.U8(0));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceUuid, AdlpdsProtocol.ParamValue.Raw(_config.Uuid.ToByteArray()));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceFirmware, AdlpdsProtocol.ParamValue.U8(0));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceStartChannel,
-            AdlpdsProtocol.ParamValue.U16((ushort)Math.Clamp(1 + (Math.Max(1, _config.Block) - 1) * 24, 1, ushort.MaxValue)));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDevicePriority, AdlpdsProtocol.ParamValue.U8(5));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDevicePictureSwitchTime, AdlpdsProtocol.ParamValue.U16(0));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDevicePageCount, AdlpdsProtocol.ParamValue.U8(1));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceSwapX, AdlpdsProtocol.ParamValue.U8(0));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceSwapY, AdlpdsProtocol.ParamValue.U8(0));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceBrightness, AdlpdsProtocol.ParamValue.U8(100));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceBrightnessSleep, AdlpdsProtocol.ParamValue.U8(100));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceSleepTimeout, AdlpdsProtocol.ParamValue.U16(0));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceStatusTransport, AdlpdsProtocol.ParamValue.U8(_config.Transport));
-        Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceStatusMulticastAddress, AdlpdsProtocol.ParamValue.U32(AdlpdsProtocol.IpToU32(_config.OwnAddress)));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceName, AdlpFrame.ParamValue.String(_config.DeviceName));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceBlock, AdlpFrame.ParamValue.U16((ushort)Math.Clamp(_config.Block, 0, ushort.MaxValue)));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceIp, AdlpFrame.ParamValue.U32(AdlpFrame.IpToU32(_config.IpAddress)));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceMask, AdlpFrame.ParamValue.U32(AdlpFrame.IpToU32(_config.Mask)));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceGateway, AdlpFrame.ParamValue.U32(AdlpFrame.IpToU32(_config.Gateway)));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceConfiguration, AdlpFrame.ParamValue.U8(0));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceUuid, AdlpFrame.ParamValue.Raw(_config.Uuid.ToByteArray()));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceFirmware, AdlpFrame.ParamValue.U8(0));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceStartChannel,
+            AdlpFrame.ParamValue.U16((ushort)Math.Clamp(1 + (Math.Max(1, _config.Block) - 1) * 24, 1, ushort.MaxValue)));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDevicePriority, AdlpFrame.ParamValue.U8(5));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDevicePictureSwitchTime, AdlpFrame.ParamValue.U16(0));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDevicePageCount, AdlpFrame.ParamValue.U8(1));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceSwapX, AdlpFrame.ParamValue.U8(0));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceSwapY, AdlpFrame.ParamValue.U8(0));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceBrightness, AdlpFrame.ParamValue.U8(100));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceBrightnessSleep, AdlpFrame.ParamValue.U8(100));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceSleepTimeout, AdlpFrame.ParamValue.U16(0));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceStatusTransport, AdlpFrame.ParamValue.U8(_config.Transport));
+        Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceStatusMulticastAddress, AdlpFrame.ParamValue.U32(AdlpFrame.IpToU32(_config.OwnAddress)));
 
         if(TryParseMac(_config.Mac, out byte[] mac))
-            Set(AdlpdsProtocol.ObjectDevice, 0, AdlpdsProtocol.ParamDeviceMac, AdlpdsProtocol.ParamValue.Raw(mac));
+            Set(AdlpFrame.ObjectDevice, 0, AdlpFrame.ParamDeviceMac, AdlpFrame.ParamValue.Raw(mac));
 
         var initialSubs = _config.GetSubscriptionList();
         for(int i = 0; i < _igmpSlots.Length; i++)
         {
             _igmpSlots[i] = i < initialSubs.Length ? initialSubs[i] : string.Empty;
-            Set(AdlpdsProtocol.ObjectIgmp, (ushort)(i + 1), AdlpdsProtocol.ParamIgmpAddress,
-                AdlpdsProtocol.ParamValue.U32(AdlpdsProtocol.IpToU32(_igmpSlots[i])));
+            Set(AdlpFrame.ObjectIgmp, (ushort)(i + 1), AdlpFrame.ParamIgmpAddress,
+                AdlpFrame.ParamValue.U32(AdlpFrame.IpToU32(_igmpSlots[i])));
         }
 
         InitializeChannels();
@@ -111,16 +111,16 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
             for(int i = 0; i < indexes.Length; i++)
             {
                 ushort local = (ushort)(i + 1);
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelIndex, AdlpdsProtocol.ParamValue.U16((ushort)indexes[i]));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelName, AdlpdsProtocol.ParamValue.String($"Channel {i + 1}"));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelControl, AdlpdsProtocol.ParamValue.U8(0));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelStreamId, AdlpdsProtocol.ParamValue.U32(0));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelPatch, AdlpdsProtocol.ParamValue.U16(0));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelWide, AdlpdsProtocol.ParamValue.U8(0));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelPreheat, AdlpdsProtocol.ParamValue.U8(0));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelLimit, AdlpdsProtocol.ParamValue.U8(100));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelCurve, AdlpdsProtocol.ParamValue.U8(0));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelSwitchDelay, AdlpdsProtocol.ParamValue.U32(0));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelIndex, AdlpFrame.ParamValue.U16((ushort)indexes[i]));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelName, AdlpFrame.ParamValue.String($"Channel {i + 1}"));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelControl, AdlpFrame.ParamValue.U8(0));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelStreamId, AdlpFrame.ParamValue.U32(0));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelPatch, AdlpFrame.ParamValue.U16(0));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelWide, AdlpFrame.ParamValue.U8(0));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelPreheat, AdlpFrame.ParamValue.U8(0));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelLimit, AdlpFrame.ParamValue.U8(100));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelCurve, AdlpFrame.ParamValue.U8(0));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelSwitchDelay, AdlpFrame.ParamValue.U32(0));
             }
         }
         else if(type is "PU" or "PU24")
@@ -128,9 +128,9 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
             for(int i = 0; i < indexes.Length; i++)
             {
                 ushort local = (ushort)(i + 1);
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelIndex, AdlpdsProtocol.ParamValue.U16((ushort)indexes[i]));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelName, AdlpdsProtocol.ParamValue.String($"Control {i + 1}"));
-                Set(AdlpdsProtocol.ObjectChannel, local, AdlpdsProtocol.ParamChannelType, AdlpdsProtocol.ParamValue.U8(1));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelIndex, AdlpFrame.ParamValue.U16((ushort)indexes[i]));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelName, AdlpFrame.ParamValue.String($"Control {i + 1}"));
+                Set(AdlpFrame.ObjectChannel, local, AdlpFrame.ParamChannelType, AdlpFrame.ParamValue.U8(1));
             }
         }
         else if(type == "INDIGATE")
@@ -138,8 +138,8 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
             for(int i = 0; i < indexes.Length; i++)
             {
                 ushort local = (ushort)(i + 1);
-                Set(AdlpdsProtocol.ObjectPixelgateChannel, local, AdlpdsProtocol.ParamChannelIndex, AdlpdsProtocol.ParamValue.U16((ushort)indexes[i]));
-                Set(AdlpdsProtocol.ObjectPixelgateChannel, local, AdlpdsProtocol.ParamChannelName, AdlpdsProtocol.ParamValue.String($"Line {i + 1}"));
+                Set(AdlpFrame.ObjectPixelgateChannel, local, AdlpFrame.ParamChannelIndex, AdlpFrame.ParamValue.U16((ushort)indexes[i]));
+                Set(AdlpFrame.ObjectPixelgateChannel, local, AdlpFrame.ParamChannelName, AdlpFrame.ParamValue.String($"Line {i + 1}"));
             }
         }
     }
@@ -174,24 +174,24 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
 
     private void ProcessDatagram(byte[] bytes, IPEndPoint remote)
     {
-        if(!AdlpdsProtocol.TryParsePacket(bytes, out var packet, out string error) || packet == null)
+        if(!AdlpFrame.TryParsePacket(bytes, out var packet, out string error) || packet == null)
         {
             Log?.Invoke($"RX INVALID from {remote}: {error}");
             return;
         }
 
-        if((packet.Flags & AdlpdsProtocol.ResponseFlag) != 0)
+        if((packet.Flags & AdlpFrame.ResponseFlag) != 0)
             return;
 
         switch(packet.Command)
         {
-            case AdlpdsProtocol.CommandGetParam:
+            case AdlpFrame.CommandGetParam:
                 HandleGetParam(packet, remote);
                 break;
-            case AdlpdsProtocol.CommandSetParam:
+            case AdlpFrame.CommandSetParam:
                 HandleSetParam(packet, remote);
                 break;
-            case AdlpdsProtocol.CommandGetStatus:
+            case AdlpFrame.CommandGetStatus:
                 Log?.Invoke($"GET_STATUS from {remote}");
                 SendStatus(remote);
                 break;
@@ -201,15 +201,15 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
         }
     }
 
-    private void HandleGetParam(AdlpdsProtocol.ParsedPacket packet, IPEndPoint remote)
+    private void HandleGetParam(AdlpFrame.ParsedPacket packet, IPEndPoint remote)
     {
-        if(!AdlpdsProtocol.TryParseRequestIds(packet.Payload, out var ids))
+        if(!AdlpFrame.TryParseRequestIds(packet.Payload, out var ids))
         {
             Log?.Invoke($"GET_PARAM malformed from {remote}");
             return;
         }
 
-        List<(AdlpdsProtocol.ParamId Id, AdlpdsProtocol.ParamValue Value)> fields = new();
+        List<(AdlpFrame.ParamId Id, AdlpFrame.ParamValue Value)> fields = new();
         lock(_sync)
         {
             foreach(var id in ids)
@@ -219,20 +219,20 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
             }
         }
 
-        byte[] payload = AdlpdsProtocol.BuildParamList(fields);
-        SendPacket(AdlpdsProtocol.CommandGetParam, packet.Tid, AdlpdsProtocol.ResponseFlag, payload, remote);
+        byte[] payload = AdlpFrame.BuildParamList(fields);
+        SendPacket(AdlpFrame.CommandGetParam, packet.Tid, AdlpFrame.ResponseFlag, payload, remote);
         Log?.Invoke($"GET_PARAM {fields.Count}/{ids.Count} fields from {remote}");
     }
 
-    private void HandleSetParam(AdlpdsProtocol.ParsedPacket packet, IPEndPoint remote)
+    private void HandleSetParam(AdlpFrame.ParsedPacket packet, IPEndPoint remote)
     {
-        if(!AdlpdsProtocol.TryParseFields(packet.Payload, out var fields))
+        if(!AdlpFrame.TryParseFields(packet.Payload, out var fields))
         {
             Log?.Invoke($"SET_PARAM malformed from {remote}");
             return;
         }
 
-        List<(AdlpdsProtocol.ParamId Id, AdlpdsProtocol.ParamValue Value)> echoes = new();
+        List<(AdlpFrame.ParamId Id, AdlpFrame.ParamValue Value)> echoes = new();
         lock(_sync)
         {
             foreach(var (id, value) in fields)
@@ -243,63 +243,63 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
             }
         }
 
-        byte[] payload = AdlpdsProtocol.BuildParamList(echoes);
-        SendPacket(AdlpdsProtocol.CommandSetParam, packet.Tid, AdlpdsProtocol.ResponseFlag, payload, remote);
+        byte[] payload = AdlpFrame.BuildParamList(echoes);
+        SendPacket(AdlpFrame.CommandSetParam, packet.Tid, AdlpFrame.ResponseFlag, payload, remote);
         Log?.Invoke($"SET_PARAM {fields.Count} fields from {remote}");
         ConfigurationChanged?.Invoke(_config);
     }
 
-    private void ApplyValue(AdlpdsProtocol.ParamId id, AdlpdsProtocol.ParamValue value)
+    private void ApplyValue(AdlpFrame.ParamId id, AdlpFrame.ParamValue value)
     {
         _values[new ParamKey(id.ObjectType, id.Index, id.Param)] = value;
 
-        if(id.ObjectType == AdlpdsProtocol.ObjectDevice)
+        if(id.ObjectType == AdlpFrame.ObjectDevice)
         {
             switch(id.Param)
             {
-                case AdlpdsProtocol.ParamDeviceName:
+                case AdlpFrame.ParamDeviceName:
                     _config.DeviceName = value.AsString();
                     break;
-                case AdlpdsProtocol.ParamDeviceBlock:
+                case AdlpFrame.ParamDeviceBlock:
                     _config.Block = value.Data.Length >= 2 ? BinaryPrimitives.ReadUInt16LittleEndian(value.Data) : _config.Block;
                     break;
-                case AdlpdsProtocol.ParamDeviceIp:
-                    _config.IpAddress = AdlpdsProtocol.U32ToIp(value.AsU32());
+                case AdlpFrame.ParamDeviceIp:
+                    _config.IpAddress = AdlpFrame.U32ToIp(value.AsU32());
                     break;
-                case AdlpdsProtocol.ParamDeviceMask:
-                    _config.Mask = AdlpdsProtocol.U32ToIp(value.AsU32());
+                case AdlpFrame.ParamDeviceMask:
+                    _config.Mask = AdlpFrame.U32ToIp(value.AsU32());
                     break;
-                case AdlpdsProtocol.ParamDeviceGateway:
-                    _config.Gateway = AdlpdsProtocol.U32ToIp(value.AsU32());
+                case AdlpFrame.ParamDeviceGateway:
+                    _config.Gateway = AdlpFrame.U32ToIp(value.AsU32());
                     break;
-                case AdlpdsProtocol.ParamDeviceMac:
+                case AdlpFrame.ParamDeviceMac:
                     if(value.Data.Length >= 6)
                         _config.Mac = string.Join(":", value.Data.Take(6).Select(b => b.ToString("X2")));
                     break;
-                case AdlpdsProtocol.ParamDeviceUuid:
+                case AdlpFrame.ParamDeviceUuid:
                     if(value.Data.Length == 16)
                         _config.Uuid = new Guid(value.Data);
                     break;
-                case AdlpdsProtocol.ParamDeviceStatusTransport:
+                case AdlpFrame.ParamDeviceStatusTransport:
                     _config.Transport = value.AsU8();
                     break;
-                case AdlpdsProtocol.ParamDeviceStatusMulticastAddress:
-                    _config.OwnAddress = value.AsU32() == 0 ? string.Empty : AdlpdsProtocol.U32ToIp(value.AsU32());
+                case AdlpFrame.ParamDeviceStatusMulticastAddress:
+                    _config.OwnAddress = value.AsU32() == 0 ? string.Empty : AdlpFrame.U32ToIp(value.AsU32());
                     break;
             }
         }
-        else if(id.ObjectType == AdlpdsProtocol.ObjectIgmp && id.Param == AdlpdsProtocol.ParamIgmpAddress && id.Index >= 1 && id.Index <= 32)
+        else if(id.ObjectType == AdlpFrame.ObjectIgmp && id.Param == AdlpFrame.ParamIgmpAddress && id.Index >= 1 && id.Index <= 32)
         {
             uint raw = value.AsU32();
-            _igmpSlots[id.Index - 1] = raw == 0 ? string.Empty : AdlpdsProtocol.U32ToIp(raw);
+            _igmpSlots[id.Index - 1] = raw == 0 ? string.Empty : AdlpFrame.U32ToIp(raw);
             _config.SetSubscriptionList(_igmpSlots.Where(x => !string.IsNullOrWhiteSpace(x)));
         }
-        else if((id.ObjectType == AdlpdsProtocol.ObjectChannel || id.ObjectType == AdlpdsProtocol.ObjectPixelgateChannel)
-            && id.Param == AdlpdsProtocol.ParamChannelIndex)
+        else if((id.ObjectType == AdlpFrame.ObjectChannel || id.ObjectType == AdlpFrame.ObjectPixelgateChannel)
+            && id.Param == AdlpFrame.ParamChannelIndex)
         {
             var channelIndexes = _values
-                .Where(x => (x.Key.ObjectType == AdlpdsProtocol.ObjectChannel || x.Key.ObjectType == AdlpdsProtocol.ObjectPixelgateChannel)
-                    && x.Key.Param == AdlpdsProtocol.ParamChannelIndex)
+                .Where(x => (x.Key.ObjectType == AdlpFrame.ObjectChannel || x.Key.ObjectType == AdlpFrame.ObjectPixelgateChannel)
+                    && x.Key.Param == AdlpFrame.ParamChannelIndex)
                 .OrderBy(x => x.Key.Index)
                 .Select(x => x.Value.Data.Length >= 2 ? BinaryPrimitives.ReadUInt16LittleEndian(x.Value.Data) : (ushort)0)
                 .Where(x => x > 0);
@@ -324,15 +324,15 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
     {
         ushort port = (ushort)Math.Clamp(_config.Port, 1, ushort.MaxValue);
         ushort block = (ushort)Math.Clamp(_config.Block, 0, ushort.MaxValue);
-        byte[] payload = AdlpdsProtocol.BuildStatusPayload(_config.Uuid, _config.Type, port, block);
-        SendPacket(AdlpdsProtocol.CommandStatus, NextTid(), 0, payload, target);
+        byte[] payload = AdlpFrame.BuildStatusPayload(_config.Uuid, _config.Type, port, block);
+        SendPacket(AdlpFrame.CommandStatus, NextTid(), 0, payload, target);
     }
 
     private void SendPacket(ushort command, ushort tid, ushort flags, byte[] payload, IPEndPoint target)
     {
         try
         {
-            byte[] bytes = AdlpdsProtocol.BuildPacket(command, tid, flags, payload);
+            byte[] bytes = AdlpFrame.BuildPacket(command, tid, flags, payload);
             _udp?.Send(bytes, bytes.Length, target);
         }
         catch(Exception ex)
@@ -343,7 +343,7 @@ internal sealed class VirtualDeviceServer : IAsyncDisposable
 
     private ushort NextTid() => unchecked((ushort)Interlocked.Increment(ref _tid));
 
-    private void Set(byte objectType, ushort index, ushort param, AdlpdsProtocol.ParamValue value)
+    private void Set(byte objectType, ushort index, ushort param, AdlpFrame.ParamValue value)
         => _values[new ParamKey(objectType, index, param)] = value;
 
     private static bool TryParseMac(string? macText, out byte[] bytes)
