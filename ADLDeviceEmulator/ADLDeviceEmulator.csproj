@@ -10,6 +10,10 @@
     <AssemblyName>ADLDeviceEmulator</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\AdlpLib\AdlpLib.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Update="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
