@@ -222,11 +222,11 @@ END;", ct).ConfigureAwait(false);
                 {
                     device = null;
 
-                    if(dto.Uuid.HasValue && dto.Uuid.Value != Guid.Empty)
+                    if(!string.IsNullOrWhiteSpace(dto.PkListUuid))
                     {
                         device = await db.Devices
                             .SingleOrDefaultAsync(
-                                x => x.Uuid == dto.Uuid &&
+                                x => x.PkListUuid == dto.PkListUuid &&
                                      x.Block == dto.Block,
                                 ct);
                     }
@@ -281,7 +281,7 @@ END;", ct).ConfigureAwait(false);
         private static void CopyToEntity(DeviceConfigDtoBase dto, DeviceEntity entity, string configType)
         {
             entity.Name = dto.Name ?? string.Empty;
-            entity.Uuid = dto.Uuid.HasValue && dto.Uuid.Value != Guid.Empty ? dto.Uuid : null;
+            entity.PkListUuid = string.IsNullOrWhiteSpace(dto.PkListUuid) ? null : dto.PkListUuid.Trim();
             entity.ConfigType = configType;
             entity.DeviceType = dto.DeviceType ?? string.Empty;
             entity.PkListSid = string.IsNullOrWhiteSpace(dto.PkListSid) ? null : dto.PkListSid.Trim();
@@ -290,6 +290,16 @@ END;", ct).ConfigureAwait(false);
             entity.Mask = dto.Mask ?? string.Empty;
             entity.Gateway = dto.Gateway ?? string.Empty;
             entity.Block = dto.Block;
+        }
+
+        public async Task<List<TaypeDeviceEntity>> GetTaypeDevicesAsync(CancellationToken ct = default)
+        {
+            await using var db = CreateDbContext();
+
+            return await db.TaypeDevices
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .ToListAsync(ct);
         }
 
         private static async Task SavePuDependentsAsync(
@@ -566,7 +576,6 @@ END;", ct).ConfigureAwait(false);
             var subscriptions = await db.DeviceMulticastSubscriptions
                 .AsNoTracking()
                 .Where(x => x.DeviceId == deviceId)
-                .OrderBy(x => x.Slot)
                 .Select(x => x.MulticastAddress)
                 .ToListAsync(ct);
 
@@ -595,43 +604,70 @@ END;", ct).ConfigureAwait(false);
             };
         }
 
-        public async Task<long> GetOrCreateDeviceIdAsync(
-    Guid uuid,
-    int block,
-    string deviceName,
-    string? ipAddress = null,
-    CancellationToken ct = default)
+        public async Task<long> GetOrCreateDeviceIdAsync(string? pkListUuid, int block, string deviceName, string? ipAddress = null, string? macAddress = null, CancellationToken ct = default)
         {
-            if(uuid == Guid.Empty)
-                throw new InvalidOperationException(
-                    "Устройство не передало UUID.");
-
             await using var db = CreateDbContext();
-
             await PrepareConnectionAsync(db, ct);
-
-            long? existingId = await db.Devices.AsNoTracking().Where(x => x.Uuid == uuid && x.Block == block).Select(x => (long?)x.Id).SingleOrDefaultAsync(ct);
-
-            if(existingId.HasValue)
-                return existingId.Value;
 
             string configType = GetConfigTypeFromDeviceName(deviceName);
 
+            var query = db.Devices
+                .Where(x => x.Block == block &&
+                            x.ConfigType == configType);
+
+            if(!string.IsNullOrWhiteSpace(pkListUuid))
+            {
+                pkListUuid = pkListUuid.Trim();
+
+                bool uuidExists = await db.ListUuids
+                    .AnyAsync(x => x.PkListUuid == pkListUuid, ct);
+
+                if(!uuidExists)
+                    throw new InvalidOperationException(
+                        $"PKlistUUID '{pkListUuid}' отсутствует в listUUID.");
+
+                query = query.Where(x => x.PkListUuid == pkListUuid);
+            }
+            else if(!string.IsNullOrWhiteSpace(macAddress))
+            {
+                query = query.Where(x => x.Mac == macAddress.Trim());
+            }
+            else if(!string.IsNullOrWhiteSpace(ipAddress))
+            {
+                query = query.Where(x => x.Ip == ipAddress.Trim());
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "Для поиска устройства необходимо указать PKlistUUID, MAC или IP.");
+            }
+
+            var ids = await query
+                .Select(x => x.Id)
+                .Take(2)
+                .ToListAsync(ct);
+
+            if(ids.Count > 1)
+                throw new InvalidOperationException(
+                    "Найдено несколько устройств. Уточните идентификатор.");
+
+            if(ids.Count == 1)
+                return ids[0];
+
             var device = new DeviceEntity
             {
-                Uuid = uuid,
+                PkListUuid = pkListUuid,
                 Block = block,
                 Name = deviceName,
                 DeviceType = deviceName,
                 ConfigType = configType,
-                Mac = string.Empty,
+                Mac = macAddress?.Trim() ?? string.Empty,
                 Ip = ipAddress ?? string.Empty,
                 Mask = string.Empty,
                 Gateway = string.Empty
             };
 
             db.Devices.Add(device);
-
             await db.SaveChangesAsync(ct);
 
             return device.Id;
@@ -798,7 +834,7 @@ END;", ct).ConfigureAwait(false);
         private static void CopyCommonToDto(DeviceEntity device, DeviceConfigDtoBase dto)
         {
             dto.Id = device.Id;
-            dto.Uuid = device.Uuid;
+            dto.PkListUuid = device.PkListUuid;
             dto.Name = device.Name;
             dto.PkListSid = device.PkListSid;
             dto.Mac = device.Mac;
@@ -1132,45 +1168,96 @@ END;", ct).ConfigureAwait(false);
 
             try
             {
-                // Собственный multicast-адрес.
                 var own = await db.DeviceMulticastAddresses
                     .FindAsync(new object[] { deviceId }, ct);
 
+                if(!string.IsNullOrEmpty(ownAddress))
+                {
+                    var ownerId = await db.DeviceMulticastAddresses
+                        .Where(x =>
+                            x.MultiCastAdress == ownAddress &&
+                            x.DeviceId != deviceId)
+                        .Select(x => (long?)x.DeviceId)
+                        .FirstOrDefaultAsync(ct);
+
+                    if(ownerId.HasValue)
+                    {
+                        throw new InvalidOperationException(
+                            $"Multicast-адрес {ownAddress} уже назначен " +
+                            $"устройству Id={ownerId.Value}.");
+                    }
+                }
+
+                bool ownChanged;
+
                 if(string.IsNullOrEmpty(ownAddress))
                 {
-                    if(own != null)
-                        db.DeviceMulticastAddresses.Remove(own);
-                }
-                else if(own == null)
-                {
-                    db.DeviceMulticastAddresses.Add(
-                        new DeviceMulticastAddressEntity
-                        {
-                            DeviceId = deviceId,
-                            MultiCastAdress = ownAddress
-                        });
+                    ownChanged = own != null;
                 }
                 else
                 {
-                    own.MultiCastAdress = ownAddress;
+                    ownChanged = own == null ||
+                        !string.Equals(
+                            own.MultiCastAdress,
+                            ownAddress,
+                            StringComparison.OrdinalIgnoreCase);
                 }
 
-                // Заменяем старые подписки новыми.
-                var oldSubscriptions =
-                    await db.DeviceMulticastSubscriptions
-                        .Where(x => x.DeviceId == deviceId)
-                        .ToListAsync(ct);
+                var oldAddresses = await db.DeviceMulticastSubscriptions
+                    .Where(x => x.DeviceId == deviceId)
+                    .Select(x => x.MulticastAddress)
+                    .ToListAsync(ct);
 
-                db.DeviceMulticastSubscriptions.RemoveRange(oldSubscriptions);
+                bool subscriptionsChanged =
+                    !new HashSet<string>(oldAddresses, StringComparer.OrdinalIgnoreCase)
+                        .SetEquals(addresses);
 
-                db.DeviceMulticastSubscriptions.AddRange(
-                    addresses.Select((address, index) =>
-                        new DeviceMulticastSubscriptionEntity
-                        {
-                            DeviceId = deviceId,
-                            Slot = index + 1,
-                            MulticastAddress = address
-                        }));
+                if(!ownChanged && !subscriptionsChanged)
+                {
+                    await tx.CommitAsync(ct);
+                    return;
+                }
+
+                if(ownChanged)
+                {
+                    if(string.IsNullOrEmpty(ownAddress))
+                    {
+                        if(own != null)
+                            db.DeviceMulticastAddresses.Remove(own);
+                    }
+                    else if(own == null)
+                    {
+                        db.DeviceMulticastAddresses.Add(
+                            new DeviceMulticastAddressEntity
+                            {
+                                DeviceId = deviceId,
+                                MultiCastAdress = ownAddress
+                            });
+                    }
+                    else
+                    {
+                        own.MultiCastAdress = ownAddress;
+                    }
+                }
+
+                if(subscriptionsChanged)
+                {
+                    var oldSubscriptions =
+                        await db.DeviceMulticastSubscriptions
+                            .Where(x => x.DeviceId == deviceId)
+                            .ToListAsync(ct);
+
+                    db.DeviceMulticastSubscriptions.RemoveRange(
+                        oldSubscriptions);
+
+                    db.DeviceMulticastSubscriptions.AddRange(
+                        addresses.Select((address) =>
+                            new DeviceMulticastSubscriptionEntity
+                            {
+                                DeviceId = deviceId,
+                                MulticastAddress = address
+                            }));
+                }
 
                 await db.SaveChangesAsync(ct);
 
@@ -1280,9 +1367,7 @@ END;", ct).ConfigureAwait(false);
             _ => throw new NotSupportedException($"Тип {dto.GetType().Name} не поддержан.")
         };
 
-        public async Task<string> GetOrAssignMulticastAddressAsync(
-    long deviceId,
-    CancellationToken ct = default)
+        public async Task<string> GetOrAssignMulticastAddressAsync(long deviceId, CancellationToken ct = default)
         {
             if(deviceId <= 0)
                 throw new ArgumentOutOfRangeException(nameof(deviceId));
@@ -1294,7 +1379,6 @@ END;", ct).ConfigureAwait(false);
             await using var tx = await db.Database.BeginTransactionAsync(
                 System.Data.IsolationLevel.Serializable, ct);
 
-            // Получаем устройство и его тип конфигурации.
             var device = await db.Devices
                 .AsNoTracking()
                 .SingleOrDefaultAsync(x => x.Id == deviceId, ct);
@@ -1303,7 +1387,6 @@ END;", ct).ConfigureAwait(false);
                 throw new InvalidOperationException(
                     $"Устройство с Id={deviceId} не найдено.");
 
-            // Если адрес уже есть — оставляем его.
             var own = await db.DeviceMulticastAddresses
                 .SingleOrDefaultAsync(x => x.DeviceId == deviceId, ct);
 
@@ -1313,10 +1396,8 @@ END;", ct).ConfigureAwait(false);
                 return own.MultiCastAdress;
             }
 
-            // Получаем диапазон для типа устройства.
             var range = GetMulticastAddressRange(device.ConfigType);
 
-            // Получаем все занятые собственные адреса.
             var usedAddresses = await db.DeviceMulticastAddresses
                 .AsNoTracking()
                 .Where(x => x.DeviceId != deviceId)
@@ -1327,7 +1408,6 @@ END;", ct).ConfigureAwait(false);
                 usedAddresses,
                 StringComparer.OrdinalIgnoreCase);
 
-            // Выбираем первый свободный адрес.
             string? newAddress = null;
 
             for(int third = range.First; third <= range.Last; third++)
@@ -1355,7 +1435,6 @@ END;", ct).ConfigureAwait(false);
                     $"239.251.{range.Last}.0 полностью занят.");
             }
 
-            // Сохраняем новый адрес.
             if(own == null)
             {
                 db.DeviceMulticastAddresses.Add(
@@ -1390,11 +1469,8 @@ END;", ct).ConfigureAwait(false);
             };
         }
 
-        public async Task<List<string>> GetMatchingMulticastAddressesAsync(
-    long deviceId,
-    CancellationToken ct = default)
+        public async Task<List<string>> GetMatchingMulticastAddressesAsync(long deviceId, CancellationToken ct = default)
         {
-            // Загружаем конфигурацию выбранного устройства.
             var currentConfig = await LoadAsync(deviceId, ct);
 
             if(currentConfig == null)
@@ -1410,7 +1486,6 @@ END;", ct).ConfigureAwait(false);
             if(currentIndexes.Count == 0)
                 return new List<string>();
 
-            // Получаем остальные устройства из БД.
             var headers = await GetAllHeadersAsync(ct);
 
             var result = new HashSet<string>(
@@ -1420,7 +1495,6 @@ END;", ct).ConfigureAwait(false);
             {
                 ct.ThrowIfCancellationRequested();
 
-                // Не сравниваем устройство само с собой.
                 if(header.Id == deviceId)
                     continue;
 
@@ -1431,21 +1505,17 @@ END;", ct).ConfigureAwait(false);
 
                 var otherFamily = GetMulticastFamily(otherConfig);
 
-                // Неизвестные типы пропускаем.
                 if(!otherFamily.HasValue)
                     continue;
 
-                // Одно семейство — подписку не создаём.
                 if(otherFamily.Value == currentFamily.Value)
                     continue;
 
                 var otherIndexes = GetMulticastChannelIndexes(otherConfig);
 
-                // Проверяем совпадение индексов.
                 if(!currentIndexes.Overlaps(otherIndexes))
                     continue;
 
-                // Получаем собственный multicast-адрес другого устройства.
                 var multicast = await GetMulticastSettingsAsync(
                     header.Id,
                     ct);
@@ -1453,7 +1523,6 @@ END;", ct).ConfigureAwait(false);
                 if(string.IsNullOrWhiteSpace(multicast.OwnAddress))
                     continue;
 
-                // Добавляем адрес только один раз.
                 result.Add(multicast.OwnAddress.Trim());
             }
 
@@ -1467,8 +1536,7 @@ END;", ct).ConfigureAwait(false);
             NetGate
         }
 
-        private static MulticastDeviceFamily? GetMulticastFamily(
-            DeviceConfigDtoBase dto)
+        private static MulticastDeviceFamily? GetMulticastFamily(DeviceConfigDtoBase dto)
         {
             return dto switch
             {
@@ -1482,8 +1550,7 @@ END;", ct).ConfigureAwait(false);
             };
         }
 
-        private static HashSet<int> GetMulticastChannelIndexes(
-    DeviceConfigDtoBase dto)
+        private static HashSet<int> GetMulticastChannelIndexes(DeviceConfigDtoBase dto)
         {
             return dto switch
             {
@@ -1511,29 +1578,35 @@ END;", ct).ConfigureAwait(false);
             };
         }
 
-        public async Task<long?> FindDeviceIdByUuidAndBlockAsync(Guid uuid, int block, CancellationToken ct = default)
+        public async Task<long?> FindDeviceIdByListUuidAndBlockAsync(string? pkListUuid, int block, CancellationToken ct = default)
         {
-            if(uuid == Guid.Empty)
+            if(string.IsNullOrWhiteSpace(pkListUuid))
                 return null;
 
             await using var db = CreateDbContext();
 
-            var ids = await db.Devices
+            return await db.Devices
                 .AsNoTracking()
-                .Where(x => x.Uuid == uuid && x.Block == block)
-                .Select(x => x.Id)
-                .Take(2)
-                .ToListAsync(ct);
-
-            if(ids.Count > 1)
-                throw new InvalidOperationException(
-                    $"Найдено несколько устройств с UUID {uuid} и блоком {block}.");
-
-            return ids.Count == 1 ? ids[0] : null;
+                .Where(x =>
+                    x.PkListUuid == pkListUuid.Trim() &&
+                    x.Block == block)
+                .Select(x => (long?)x.Id)
+                .SingleOrDefaultAsync(ct);
         }
 
-        public async Task<string> GetDatabaseDiagnosticsAsync(
-    CancellationToken ct = default)
+        public async Task<long?> GetMulticastAddressOwnerAsync(string address, long currentDeviceId, CancellationToken ct = default)
+        {
+            await using var db = CreateDbContext();
+
+            return await db.DeviceMulticastAddresses
+                .Where(x =>
+                    x.MultiCastAdress == address &&
+                    x.DeviceId != currentDeviceId)
+                .Select(x => (long?)x.DeviceId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        public async Task<string> GetDatabaseDiagnosticsAsync(CancellationToken ct = default)
         {
             var sb = new StringBuilder();
 

@@ -58,5 +58,7 @@ namespace AdlpLib.Models.Devices
 
         [JsonPropertyOrder(8)]
         public Guid? Uuid { get; set; }
+
+        public string? PkListUuid { get; set; }
     }
 }

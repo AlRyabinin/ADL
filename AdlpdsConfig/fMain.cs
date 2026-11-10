@@ -209,9 +209,7 @@ namespace AdlpdsConfig
 
             if(config.Uuid.HasValue && config.Uuid.Value != Guid.Empty)
             {
-                long? id = await _repo.FindDeviceIdByUuidAndBlockAsync(
-                    config.Uuid.Value,
-                    config.Block);
+                long? id = await _repo.FindDeviceIdByListUuidAndBlockAsync(config.PkListUuid, config.Block);
 
                 if(id.HasValue)
                     return id;
@@ -1007,13 +1005,15 @@ namespace AdlpdsConfig
 
             try
             {
-                long deviceId = await _repo.GetOrCreateDeviceIdAsync(device.Uuid, device.Block, device.Name, device.Endpoint?.Address.ToString());
+                string? pkListUuid = device.Uuid == Guid.Empty ? null : device.Uuid.ToString("N");
 
-                using var form = new fMulticastEditor(
-                    Svc,
-                    device,
-                    _repo,
-                    deviceId);
+                long deviceId = await _repo.GetOrCreateDeviceIdAsync(
+                                            pkListUuid: null,
+                                            block: device.Block,
+                                            deviceName: device.Name,
+                                            ipAddress: device.Endpoint?.Address.ToString(),
+                                            macAddress: null);
+                using var form = new fMulticastEditor(Svc, device, _repo, deviceId);
 
                 form.ShowDialog(this);
             }

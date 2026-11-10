@@ -1,5 +1,6 @@
 using AdlpLib.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AdlpLib.Persistence;
 
@@ -8,8 +9,18 @@ public sealed class AdlpDbContext : DbContext
 {
     public AdlpDbContext(DbContextOptions<AdlpDbContext> options) : base(options) { }
 
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.LogTo(
+            message => System.Diagnostics.Debug.WriteLine(message),
+            LogLevel.Information);
+    }
+
     public DbSet<DeviceEntity> Devices => Set<DeviceEntity>();
     public DbSet<ListSidEntity> ListSids => Set<ListSidEntity>();
+    public DbSet<ObjectEntity> Objects => Set<ObjectEntity>();
+    public DbSet<ListUuidEntity> ListUuids => Set<ListUuidEntity>();
+    public DbSet<TaypeDeviceEntity> TaypeDevices => Set<TaypeDeviceEntity>();
     public DbSet<DeviceMulticastAddressEntity> DeviceMulticastAddresses => Set<DeviceMulticastAddressEntity>();
     public DbSet<DeviceMulticastSubscriptionEntity> DeviceMulticastSubscriptions => Set<DeviceMulticastSubscriptionEntity>();
     public DbSet<PuDeviceEntity> PuDevices => Set<PuDeviceEntity>();
@@ -85,6 +96,98 @@ public sealed class AdlpDbContext : DbContext
                 .HasColumnName("DateRecOn")
                 .IsRequired()
                 .ValueGeneratedOnAddOrUpdate();
+
+            entity.Property(x => x.ObjectId).HasColumnName("ObjectId").IsRequired(false);
+            entity.HasOne(x => x.ObjectRecord).WithMany()
+                  .HasForeignKey(x => x.ObjectId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ObjectEntity>(entity =>
+        {
+            entity.ToTable("Object", table => table.ExcludeFromMigrations());
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedOnAdd();
+            entity.Property(x => x.Name).HasColumnName("name").HasMaxLength(255).IsRequired();
+            entity.Property(x => x.RegWebUser).HasColumnName("regWebUser").HasMaxLength(50)
+                  .ValueGeneratedOnAddOrUpdate();
+            entity.Property(x => x.DateRec).HasColumnName("DateRec").ValueGeneratedOnAdd();
+            entity.Property(x => x.DateRecOn).HasColumnName("DateRecOn").ValueGeneratedOnAddOrUpdate();
+        });
+
+        modelBuilder.Entity<ListUuidEntity>(entity =>
+        {
+            entity.ToTable("listUUID", table => table.ExcludeFromMigrations());
+
+            entity.HasKey(x => x.PkListUuid);
+
+            entity.Property(x => x.PkListUuid)
+                .HasColumnName("PKlistUUID")
+                .HasColumnType("char(32)")
+                .HasMaxLength(32)
+                .IsFixedLength()
+                .UseCollation("utf8_general_ci")
+                .IsRequired();
+
+            entity.Property(x => x.Sn)
+                .HasColumnName("SN")
+                .HasMaxLength(32)
+                .IsRequired(false);
+
+            entity.Property(x => x.FkListSid)
+                .HasColumnName("FKlistSID")
+                .HasColumnType("char(8)")
+                .HasMaxLength(8)
+                .IsFixedLength()
+                .IsRequired();
+
+            entity.Property(x => x.FkTypeDevices)
+                .HasColumnName("FKtaypeDevices")
+                .IsRequired();
+
+            entity.Property(x => x.NumBlock)
+                .HasColumnName("NumBlock")
+                .IsRequired(false);
+
+            entity.Property(x => x.IdTxtDCon)
+                .HasColumnName("idtxtDCon")
+                .IsRequired();
+
+            entity.Property(x => x.Mac)
+                .HasColumnName("MAC")
+                .HasColumnType("char(24)")
+                .HasMaxLength(24)
+                .IsFixedLength()
+                .IsRequired(false);
+
+            entity.Property(x => x.Ip)
+                .HasColumnName("IP")
+                .HasColumnType("char(20)")
+                .HasMaxLength(20)
+                .IsFixedLength()
+                .IsRequired(false);
+
+            entity.Property(x => x.Port)
+                .HasColumnName("port")
+                .IsRequired(false);
+
+            entity.Property(x => x.Comment)
+                .HasColumnName("comment")
+                .HasMaxLength(255)
+                .IsRequired(false);
+
+            entity.Property(x => x.RegWebUser)
+                .HasColumnName("regWebUser")
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(x => x.DateRec)
+                .HasColumnName("DateRec")
+                .IsRequired(false);
+
+            entity.Property(x => x.DateRecOn)
+                .HasColumnName("DateRecOn")
+                .ValueGeneratedOnAddOrUpdate()
+                .IsRequired();
         });
 
         modelBuilder.Entity<DeviceEntity>(entity =>
@@ -115,9 +218,60 @@ public sealed class AdlpDbContext : DbContext
             entity.Property(e => e.Block).HasDefaultValue(0);
             entity.Property(e => e.CreatedBy).HasMaxLength(100);
             entity.Property(e => e.UpdatedBy).HasMaxLength(100);
-            entity.HasIndex(e => new { e.Uuid, e.Block }).IsUnique();
+            entity.HasIndex(e => new { e.PkListUuid, e.Block }).IsUnique();
+            entity.Property(x => x.PkListUuid).HasColumnName("PKlistUUID").HasColumnType("char(32)").HasMaxLength(32).IsFixedLength().UseCollation("utf8_general_ci").IsRequired(false);
+            entity.HasOne(x => x.UuidRecord).WithMany().HasForeignKey(x => x.PkListUuid).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.PkListSid).HasColumnName("PKlistSID").HasColumnType("char(8)").HasMaxLength(8).IsFixedLength();
             entity.HasOne(x => x.SidRecord).WithMany().HasForeignKey(x => x.PkListSid).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<TaypeDeviceEntity>(entity =>
+        {
+            entity.ToTable("taypeDevices",
+                table => table.ExcludeFromMigrations());
+
+            entity.HasKey(x => x.PkTaypeDevices);
+
+            entity.Property(x => x.PkTaypeDevices)
+                .HasColumnName("PKtaypeDevices")
+                .ValueGeneratedOnAdd();
+
+            entity.Property(x => x.Name)
+                .HasColumnName("Name")
+                .HasMaxLength(255)
+                .IsRequired();
+
+            entity.Property(x => x.IdTxtDConTxtName)
+                .HasColumnName("idtxtDCon_txt_name")
+                .IsRequired();
+
+            entity.Property(x => x.Brend)
+                .HasColumnName("Brend")
+                .HasColumnType("enum('etc','ADL')")
+                .HasDefaultValue("ADL");
+
+            entity.Property(x => x.TypeCodeUnit)
+                .HasColumnName("typeCodeUnit")
+                .HasColumnType("char(2)")
+                .HasMaxLength(2)
+                .IsFixedLength()
+                .IsRequired();
+
+            entity.Property(x => x.IdTxtDConTxtNote)
+                .HasColumnName("idtxtDCon_txt_note");
+
+            entity.Property(x => x.RegWebUser)
+                .HasColumnName("regWebUser")
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(x => x.DateRec)
+                .HasColumnName("DateRec");
+
+            entity.Property(x => x.DateRecOn)
+                .HasColumnName("DateRecOn")
+                .HasColumnType("timestamp")
+                .ValueGeneratedOnAddOrUpdate();
         });
 
         modelBuilder.Entity<DeviceMulticastAddressEntity>(entity =>
@@ -141,21 +295,13 @@ public sealed class AdlpDbContext : DbContext
 
         modelBuilder.Entity<DeviceMulticastSubscriptionEntity>(entity =>
         {
-            entity.ToTable("DeviceMulticastSubscriptions", table =>
-            {
-                table.HasCheckConstraint(
-                    "CK_DeviceMulticastSubscriptions_DeviceIdSlot",
-                    "Slot >= 1 AND Slot <= 32");
-            });
+            entity.ToTable("DeviceMulticastSubscriptions");
 
-            entity.HasKey(x => new { x.DeviceId, x.Slot });
+            entity.HasKey(x => new { x.DeviceId, x.MulticastAddress });
 
             entity.Property(x => x.MulticastAddress)
                 .HasMaxLength(15)
-                .IsRequired();
-
-            entity.HasIndex(x => new { x.DeviceId, x.MulticastAddress })
-                .IsUnique();
+                .IsRequired();      
 
             entity.HasOne<DeviceEntity>()
                 .WithMany()

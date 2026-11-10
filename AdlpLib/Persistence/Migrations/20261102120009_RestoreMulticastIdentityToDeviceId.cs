@@ -17,35 +17,32 @@ namespace AdlpLib.Persistence.Migrations
             // В текущей MySQL-базе Devices.Id имеет тип INT.
             // INTEGER в миграции Pomelo соответствует этому типу.
 
-            // В SQLite старые таблицы ещё имеют FK на MulticastDevices,
-            // поэтому удаляем их перед переименованием.
-            // В текущей MySQL-базе эти FK уже были удалены предыдущей
-            // неудачной попыткой миграции.
-            if(!isMySql)
+            if(isMySql)
             {
-                migrationBuilder.DropForeignKey(
-                    name: "FK_DeviceMulticastAddresses_MulticastDevices_DeviceMac",
-                    table: "DeviceMulticastAddresses");
+                // Поведение для MySQL не меняется: она уже применена.
+                migrationBuilder.RenameTable(
+                    name: "DeviceMulticastAddresses",
+                    newName: "DeviceMulticastAddresses_LegacyMac");
 
-                migrationBuilder.DropForeignKey(
-                    name: "FK_DeviceMulticastSubscriptions_MulticastDevices_DeviceMac",
-                    table: "DeviceMulticastSubscriptions");
+                migrationBuilder.RenameTable(
+                    name: "DeviceMulticastSubscriptions",
+                    newName: "DeviceMulticastSubscriptions_LegacyMac");
+
+                migrationBuilder.Sql("DROP TABLE IF EXISTS MulticastDevices;");
             }
-
-            // Сохраняем старые таблицы целиком.
-            // В них находится настройка 239.235.1.10,
-            // для которой пока невозможно определить DeviceId.
-            migrationBuilder.RenameTable(
-                name: "DeviceMulticastAddresses",
-                newName: "DeviceMulticastAddresses_LegacyMac");
-
-            migrationBuilder.RenameTable(
-                name: "DeviceMulticastSubscriptions",
-                newName: "DeviceMulticastSubscriptions_LegacyMac");
-
-            // Старый реестр больше не нужен.
-            // IF EXISTS — таблица в текущей базе уже отсутствует.
-            migrationBuilder.Sql("DROP TABLE IF EXISTS MulticastDevices;");
+            else
+            {
+                // SQLite не умеет DROP FOREIGN KEY. Копируем данные в таблицы без ограничений,
+                // потом удаляем старые (сначала дочерние, затем родителя). Так каскад
+                // не сотрёт копию, как случилось бы при удалении MulticastDevices.
+                migrationBuilder.Sql(
+                    "CREATE TABLE DeviceMulticastAddresses_LegacyMac AS SELECT * FROM DeviceMulticastAddresses;");
+                migrationBuilder.Sql(
+                    "CREATE TABLE DeviceMulticastSubscriptions_LegacyMac AS SELECT * FROM DeviceMulticastSubscriptions;");
+                migrationBuilder.Sql("DROP TABLE DeviceMulticastSubscriptions;");
+                migrationBuilder.Sql("DROP TABLE DeviceMulticastAddresses;");
+                migrationBuilder.Sql("DROP TABLE IF EXISTS MulticastDevices;");
+            }
 
             // Создаём новую таблицу собственного адреса.
             migrationBuilder.CreateTable(

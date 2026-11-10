@@ -289,14 +289,62 @@ namespace AdlpdsConfig.Controls.Database
 
                         long? existingId = null;
 
-                        if(cfg.Uuid.HasValue && cfg.Uuid.Value != Guid.Empty)
+                        // 1. Основной поиск по новому ключу listUUID.
+                        if(!string.IsNullOrWhiteSpace(cfg.PkListUuid))
                         {
-                            existingId = await _repo.FindDeviceIdByUuidAndBlockAsync(
-                                cfg.Uuid.Value,
+                            existingId = await _repo.FindDeviceIdByListUuidAndBlockAsync(
+                                cfg.PkListUuid,
                                 cfg.Block);
                         }
 
+                        // 2. Для старых JSON без PkListUuid ищем по MAC, типу и блоку.
+                        if(!existingId.HasValue && !string.IsNullOrWhiteSpace(cfg.Mac))
+                        {
+                            string configType = DeviceConfigRepository.ConfigTypeOf(cfg);
+
+                            var matches = (await _repo.GetAllHeadersAsync())
+                                .Where(x =>
+                                    x.Block == cfg.Block &&
+                                    string.Equals(
+                                        x.ConfigType,
+                                        configType,
+                                        StringComparison.OrdinalIgnoreCase) &&
+                                    string.Equals(
+                                        x.Mac,
+                                        cfg.Mac.Trim(),
+                                        StringComparison.OrdinalIgnoreCase))
+                                .Take(2)
+                                .ToList();
+
+                            if(matches.Count > 1)
+                            {
+                                throw new InvalidOperationException(
+                                    $"Найдено несколько устройств с MAC {cfg.Mac}, " +
+                                    $"типом {configType} и блоком {cfg.Block}.");
+                            }
+
+                            if(matches.Count == 1)
+                                existingId = matches[0].Id;
+                        }
+
                         bool isUpdate = existingId.HasValue;
+
+                        if(isUpdate)
+                        {
+                            cfg.Id = existingId.Value;
+
+                            // Сохраняем уже назначенные ключи, если их нет в JSON.
+                            var currentConfig = await _repo.LoadAsync(existingId.Value);
+
+                            if(currentConfig != null)
+                            {
+                                if(string.IsNullOrWhiteSpace(cfg.PkListUuid))
+                                    cfg.PkListUuid = currentConfig.PkListUuid;
+
+                                if(string.IsNullOrWhiteSpace(cfg.PkListSid))
+                                    cfg.PkListSid = currentConfig.PkListSid;
+                            }
+                        }
 
                         if(isUpdate)
                             cfg.Id = existingId.Value;

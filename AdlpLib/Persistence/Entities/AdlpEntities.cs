@@ -13,7 +13,8 @@ public sealed class DeviceEntity
     public string DeviceType { get; set; } = string.Empty;
     public string? PkListSid { get; set; }
     public ListSidEntity? SidRecord { get; set; }
-    public Guid? Uuid { get; set; }
+    public string? PkListUuid { get; set; }
+    public ListUuidEntity? UuidRecord { get; set; }
     public string Mac { get; set; } = string.Empty;
     public string Ip { get; set; } = string.Empty;
     public string Mask { get; set; } = string.Empty;
@@ -254,8 +255,6 @@ public sealed class DeviceMulticastSubscriptionEntity
 {
     public long DeviceId { get; set; }
 
-    public int Slot { get; set; }
-
     public string MulticastAddress { get; set; } = string.Empty;
 }
 
@@ -267,7 +266,70 @@ public sealed class ListSidEntity
 
     public int IdTxtDCon { get; set; }
 
+    public int? ObjectId { get; set; }
+
+    public ObjectEntity? ObjectRecord { get; set; }
+
     public string? Comment { get; set; }
+
+    public string RegWebUser { get; set; } = string.Empty;
+
+    public DateTime? DateRec { get; set; }
+
+    public DateTime DateRecOn { get; set; }
+}
+
+public sealed class ObjectEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string RegWebUser { get; set; } = string.Empty;
+    public DateTime? DateRec { get; set; }
+    public DateTime DateRecOn { get; set; }
+}
+
+public sealed class ListUuidEntity
+{
+    public string PkListUuid { get; set; } = string.Empty;
+
+    public string? Sn { get; set; }
+
+    public string FkListSid { get; set; } = string.Empty;
+
+    public int FkTypeDevices { get; set; }
+
+    public int? NumBlock { get; set; }
+
+    public int IdTxtDCon { get; set; }
+
+    public string? Mac { get; set; }
+
+    public string? Ip { get; set; }
+
+    public int? Port { get; set; }
+
+    public string? Comment { get; set; }
+
+    public string RegWebUser { get; set; } = string.Empty;
+
+    public DateTime? DateRec { get; set; }
+
+    public DateTime DateRecOn { get; set; }
+}
+
+public sealed class TaypeDeviceEntity
+{
+    public int PkTaypeDevices { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public int IdTxtDConTxtName { get; set; }
+
+    public string? Brend { get; set; }
+
+    public string TypeCodeUnit { get; set; } = string.Empty;
+
+    public int? IdTxtDConTxtNote { get; set; }
 
     public string RegWebUser { get; set; } = string.Empty;
 
