@@ -1478,7 +1478,8 @@ END;", ct).ConfigureAwait(false);
 
             var currentFamily = GetMulticastFamily(currentConfig);
 
-            if(!currentFamily.HasValue)
+            if(currentFamily != MulticastDeviceFamily.Pu &&
+               currentFamily != MulticastDeviceFamily.Exec)
                 return new List<string>();
 
             var currentIndexes = GetMulticastChannelIndexes(currentConfig);
@@ -1505,10 +1506,13 @@ END;", ct).ConfigureAwait(false);
 
                 var otherFamily = GetMulticastFamily(otherConfig);
 
-                if(!otherFamily.HasValue)
-                    continue;
+                bool validPair =
+                    (currentFamily == MulticastDeviceFamily.Pu &&
+                     otherFamily == MulticastDeviceFamily.Exec) ||
+                    (currentFamily == MulticastDeviceFamily.Exec &&
+                     otherFamily == MulticastDeviceFamily.Pu);
 
-                if(otherFamily.Value == currentFamily.Value)
+                if(!validPair)
                     continue;
 
                 var otherIndexes = GetMulticastChannelIndexes(otherConfig);
@@ -1517,8 +1521,7 @@ END;", ct).ConfigureAwait(false);
                     continue;
 
                 var multicast = await GetMulticastSettingsAsync(
-                    header.Id,
-                    ct);
+                    header.Id, ct);
 
                 if(string.IsNullOrWhiteSpace(multicast.OwnAddress))
                     continue;
@@ -1561,11 +1564,10 @@ END;", ct).ConfigureAwait(false);
                     ?? Enumerable.Empty<int>()),
 
                 PuConfigDtoBase pu => new HashSet<int>(
-                    pu.Channels?
-                        .Where(x =>
-                            x.Type == (int)ChannelType.CHTYPE_CHANNEL &&
-                            x.Index > 0)
-                        .Select(x => x.Index)
+                    pu.Groups?
+                        .Where(group => group.Channels != null)
+                        .SelectMany(group => group.Channels)
+                        .Where(index => index > 0)
                     ?? Enumerable.Empty<int>()),
 
                 NetGateConfigDto gate => new HashSet<int>(

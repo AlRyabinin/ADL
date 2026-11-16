@@ -24,9 +24,13 @@ namespace AdlpdsConfig.Controls
         private bool _available = true;
         private bool _errorShown;
         private readonly DeviceConfigRepository _repository;
-        private readonly long _deviceId;
+        private readonly long? _deviceId;
 
-        internal fMulticastEditor(AdlpdsService svc, Device device, DeviceConfigRepository repository, long deviceId)
+        internal fMulticastEditor(
+            AdlpdsService svc,
+            Device device,
+            DeviceConfigRepository repository,
+            long? deviceId)
         {
             _svc = svc;
             _device = device;
@@ -42,6 +46,7 @@ namespace AdlpdsConfig.Controls
 
             Shown += (_, _) => ReadMulticast();
         }
+
         private void BuildInterface()
         {
             var layout = new TableLayoutPanel
@@ -175,7 +180,7 @@ namespace AdlpdsConfig.Controls
                                 _subscriptions.Lines =
                                     cfg.Subscriptions.ToArray();
 
-                                _ = SaveReadSettingsAsync(cfg);
+                                _ = ApplyMatchingSubscriptionsAsync(cfg);
 
                                 SetBusy(false, "Параметры прочитаны");
                             }));
@@ -195,130 +200,66 @@ namespace AdlpdsConfig.Controls
             }
         }
 
-        private async Task SaveReadSettingsAsync(AdlpdsService.MulticastSettings cfg)
+        private async Task ApplyMatchingSubscriptionsAsync(AdlpdsService.MulticastSettings cfg)
         {
-            static string? NormalizeAddress(string? value)
-            {
-                return string.IsNullOrWhiteSpace(value)
-                    ? null
-                    : value.Trim();
-            }
-
-            static List<string> NormalizeAddresses(IEnumerable<string>? values)
-            {
-                return (values ?? Enumerable.Empty<string>())
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Select(x => x.Trim())
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
-
             try
             {
-                // Подписки, прочитанные непосредственно с устройства
-                var existing = NormalizeAddresses(cfg.Subscriptions);
+                var existing = cfg.Subscriptions
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x.Trim())
+                    .ToList();
 
-                // Подписки, которые должны быть добавлены автоматически
-                var matchingAddresses =
-                    await _repository.GetMatchingMulticastAddressesAsync(_deviceId);
+                var matchingAddresses = _deviceId.HasValue
+                    ? await _repository.GetMatchingMulticastAddressesAsync(
+                        _deviceId.Value)
+                    : new List<string>();
 
                 var merged = existing
-                    .Concat(NormalizeAddresses(matchingAddresses))
+                    .Concat(matchingAddresses)
                     .Where(x => !string.Equals(
                         x,
-                        NormalizeAddress(cfg.OwnAddress),
+                        cfg.OwnAddress?.Trim(),
                         StringComparison.OrdinalIgnoreCase))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
-                int addedCount = merged.Count - existing.Count;
-
                 if(merged.Count > AdlpdsService.MaxIgmpSlots)
                 {
                     throw new InvalidOperationException(
-                        $"После автоматического добавления найдено {merged.Count} подписок.\n" +
-                        $"Устройство поддерживает максимум {AdlpdsService.MaxIgmpSlots}.");
+                        $"Найдено {merged.Count} подписок. " +
+                        $"Устройство поддерживает максимум " +
+                        $"{AdlpdsService.MaxIgmpSlots}.");
                 }
 
-                // Получаем настройки, которые уже находятся в БД
-                var saved = await _repository.GetMulticastSettingsAsync(_deviceId);
-
-                var savedOwnAddress = NormalizeAddress(saved.OwnAddress);
-                var newOwnAddress = NormalizeAddress(cfg.OwnAddress);
-
-                var savedSubscriptions = NormalizeAddresses(saved.Subscriptions);
-
-                // Сравниваем адрес и набор подписок
-                bool ownAddressChanged = !string.Equals(
-                    savedOwnAddress,
-                    newOwnAddress,
-                    StringComparison.OrdinalIgnoreCase);
-
-                bool subscriptionsChanged =
-                    !savedSubscriptions.ToHashSet(StringComparer.OrdinalIgnoreCase)
-                        .SetEquals(merged);
-
-                bool hasChanges = ownAddressChanged || subscriptionsChanged;
+                int addedCount = merged.Count - existing
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
 
                 cfg.Subscriptions = merged;
-
-                var ownerId = await _repository.GetMulticastAddressOwnerAsync(
-    cfg.OwnAddress,
-    _deviceId);
-
-                if(ownerId.HasValue)
-                {
-                    SetBusy(false,
-                        $"Multicast-адрес {cfg.OwnAddress} уже назначен устройству ID {ownerId.Value}");
-
-                    return;
-                }
-
-                if(hasChanges)
-                {
-                    await _repository.SaveMulticastSettingsAsync(
-                        _deviceId,
-                        cfg.OwnAddress,
-                        cfg.Subscriptions);
-                }
 
                 if(IsDisposed)
                     return;
 
                 _subscriptions.Lines = merged.ToArray();
 
-                if(addedCount > 0)
-                {
-                    _svc.WriteMulticast(_device, cfg);
-
-                    SetBusy(
-                        false,
-                        $"Автоматически добавлено подписок: {addedCount}");
-                }
-                else if(hasChanges)
-                {
-                    SetBusy(false, "Параметры прочитаны, изменения сохранены в БД");
-                }
-                else
-                {
-                    SetBusy(false, "Параметры прочитаны, изменений нет");
-                }
+                SetBusy(false, addedCount > 0
+                    ? $"Найдено новых подписок: {addedCount}"
+                    : "Параметры прочитаны");
             }
             catch(Exception ex)
             {
                 if(IsDisposed)
                     return;
 
-                SetBusy(false, "Ошибка обработки подписок");
+                SetBusy(false, "Ошибка поиска подписок");
 
                 MessageBox.Show(
-                    $"Ошибка при автоматическом формировании подписок:\n{ex.Message}",
+                    $"Ошибка поиска мультикаст-подписок:\n{ex.Message}",
                     Text,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
         }
-
 
         private async void WriteMulticast()
         {
@@ -340,30 +281,41 @@ namespace AdlpdsConfig.Controls
 
             try
             {
-                _svc.WriteMulticast(_device, cfg);
-
-                var ownerId = await _repository.GetMulticastAddressOwnerAsync(
-    cfg.OwnAddress,
-    _deviceId);
+                var ownerId = await _repository.GetMulticastAddressOwnerAsync(cfg.OwnAddress, _deviceId ?? 0);
 
                 if(ownerId.HasValue)
                 {
                     SetBusy(false,
-                        $"Multicast-адрес {cfg.OwnAddress} уже назначен устройству ID {ownerId.Value}");
+                        $"Multicast-адрес {cfg.OwnAddress} " +
+                        $"уже назначен устройству ID {ownerId.Value}");
 
                     return;
                 }
 
-                await _repository.SaveMulticastSettingsAsync(_deviceId, cfg.OwnAddress, cfg.Subscriptions);
+                _svc.WriteMulticast(_device, cfg);
 
-                SetBusy(false, "Настройки записаны и сохранены в БД");
+                if(_deviceId.HasValue)
+                {
+                    await _repository.SaveMulticastSettingsAsync(
+                        _deviceId.Value,
+                        cfg.OwnAddress,
+                        cfg.Subscriptions);
+
+                    SetBusy(false, "Настройки записаны и сохранены в БД");
+                }
+                else
+                {
+                    SetBusy(false,
+                        "Настройки отправлены устройству. " +
+                        "В БД не сохранены: устройство ещё не зарегистрировано.");
+                }
             }
             catch(Exception ex)
             {
                 SetBusy(false, "Ошибка записи или сохранения");
 
                 MessageBox.Show(
-                    $"Ошибка при записи мультикаст-настроек:\n{ex.Message}",
+                    $"Ошибка записи мультикаст-настроек:\n{ex.Message}",
                     Text,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);

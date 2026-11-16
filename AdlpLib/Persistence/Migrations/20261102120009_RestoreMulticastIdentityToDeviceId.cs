@@ -27,7 +27,7 @@ namespace AdlpLib.Persistence.Migrations
                 migrationBuilder.RenameTable(
                     name: "DeviceMulticastSubscriptions",
                     newName: "DeviceMulticastSubscriptions_LegacyMac");
-
+                
                 migrationBuilder.Sql("DROP TABLE IF EXISTS MulticastDevices;");
             }
             else

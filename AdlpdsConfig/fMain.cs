@@ -990,7 +990,8 @@ namespace AdlpdsConfig
             }
         }
 
-        private async void MulticastToolStripMenuItem_Click(object sender, EventArgs e)
+        private async void MulticastToolStripMenuItem_Click(
+    object sender, EventArgs e)
         {
             var device = GetSelectedDevice();
 
@@ -1005,15 +1006,20 @@ namespace AdlpdsConfig
 
             try
             {
-                string? pkListUuid = device.Uuid == Guid.Empty ? null : device.Uuid.ToString("N");
+                long? deviceId = null;
 
-                long deviceId = await _repo.GetOrCreateDeviceIdAsync(
-                                            pkListUuid: null,
-                                            block: device.Block,
-                                            deviceName: device.Name,
-                                            ipAddress: device.Endpoint?.Address.ToString(),
-                                            macAddress: null);
-                using var form = new fMulticastEditor(Svc, device, _repo, deviceId);
+                if(device.Uuid != Guid.Empty)
+                {
+                    deviceId = await _repo.FindDeviceIdByListUuidAndBlockAsync(
+                        device.Uuid.ToString("N"),
+                        device.Block);
+                }
+
+                using var form = new fMulticastEditor(
+                    Svc,
+                    device,
+                    _repo,
+                    deviceId);
 
                 form.ShowDialog(this);
             }
