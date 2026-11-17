@@ -135,7 +135,7 @@ namespace AdlpdsConfig
                 return;
             }
 
-            using var dlg = new fConfSaver(Svc, device)
+            using var dlg = new fConfSaver(Svc, device, _repo)
             {
                 StartPosition = FormStartPosition.CenterParent
             };
@@ -159,6 +159,11 @@ namespace AdlpdsConfig
 
             try
             {
+                // listUUID для (выбранный SID, SN, тип), если он уже есть.
+                // Создаётся (при необходимости) внутри _repo.SaveAsync.
+                config.PkListUuid = await _repo.FindListUuidAsync(
+                    config.PkListSid, config.Sn, DeviceConfigRepository.ConfigTypeOf(config));
+
                 long? existingId = await FindExistingDeviceIdAsync(config);
 
                 if(existingId.HasValue)
@@ -167,14 +172,10 @@ namespace AdlpdsConfig
 
                     config.Id = existingId.Value;
 
-                    // Не затираем назначенный SID и имя устройства.
-                    if(existingConfig != null)
-                    {
-                        config.PkListSid = existingConfig.PkListSid;
-
-                        if(!string.IsNullOrWhiteSpace(existingConfig.Name))
-                            config.Name = existingConfig.Name;
-                    }
+                    // Имя, заданное пользователем в БД, не затираем.
+                    // SID теперь выбирается в диалоге, поэтому остаётся тот, что выбран там.
+                    if(existingConfig != null && !string.IsNullOrWhiteSpace(existingConfig.Name))
+                        config.Name = existingConfig.Name;
                 }
                 else if((!config.Uuid.HasValue || config.Uuid.Value == Guid.Empty) &&
                         string.IsNullOrWhiteSpace(config.Mac))
@@ -207,7 +208,7 @@ namespace AdlpdsConfig
             if(_repo == null)
                 return null;
 
-            if(config.Uuid.HasValue && config.Uuid.Value != Guid.Empty)
+            if(!string.IsNullOrWhiteSpace(config.PkListUuid))
             {
                 long? id = await _repo.FindDeviceIdByListUuidAndBlockAsync(config.PkListUuid, config.Block);
 
@@ -990,8 +991,7 @@ namespace AdlpdsConfig
             }
         }
 
-        private async void MulticastToolStripMenuItem_Click(
-    object sender, EventArgs e)
+        private async void MulticastToolStripMenuItem_Click(object sender, EventArgs e)
         {
             var device = GetSelectedDevice();
 
@@ -1015,13 +1015,16 @@ namespace AdlpdsConfig
                         device.Block);
                 }
 
-                using var form = new fMulticastEditor(
+                var form = new fMulticastEditor(
                     Svc,
                     device,
                     _repo,
-                    deviceId);
+                    deviceId)
+                {
+                    Owner = this
+                };
 
-                form.ShowDialog(this);
+                form.Show();
             }
             catch(Exception ex)
             {

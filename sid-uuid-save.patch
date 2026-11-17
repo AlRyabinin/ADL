@@ -1,0 +1,1030 @@
+
+--- a/ADL/AdlpLib/Configuration/Application/DeviceConfigRepository.cs	2026-11-16 08:16:42.000000000 +0000
++++ b/ADL/AdlpLib/Configuration/Application/DeviceConfigRepository.cs	2026-11-16 09:26:22.453511083 +0000
+@@ -216,6 +216,11 @@
+             try
+             {
+                 string configType = ConfigTypeOf(dto);
++
++                // Выбранные SID и listUUID должны существовать и соответствовать друг другу и типу устройства.
++                if(_dbType == DatabaseType.MySQL)
++                    await ValidateListUuidAsync(db, dto, configType, ct).ConfigureAwait(false);
++
+                 DeviceEntity device;
+ 
+                 if(dto.Id == 0)
+@@ -292,6 +297,178 @@
+             entity.Block = dto.Block;
+         }
+ 
++        // ---------------------------------------------------------------------
++        // listUUID: связка SID + физическое устройство (SN) + тип устройства
++        // ---------------------------------------------------------------------
++
++        /// <summary>listUUID существует только в MySQL-схеме.</summary>
++        public bool SupportsListUuid => _dbType == DatabaseType.MySQL;
++
++        /// <summary>Записи listUUID для данного SID и типа устройства (для выпадающего списка).</summary>
++        public async Task<List<ListUuidEntity>> GetListUuidsAsync(string sid, string configType, CancellationToken ct = default)
++        {
++            if(!SupportsListUuid || string.IsNullOrWhiteSpace(sid))
++                return new List<ListUuidEntity>();
++
++            await using var db = CreateDbContext();
++
++            int typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false)
++                ?? throw new InvalidOperationException(
++                    $"Для типа '{configType}' нет соответствия в taypeDevices.");
++
++            string key = sid.Trim();
++
++            return await db.ListUuids.AsNoTracking()
++                .Where(x => x.FkListSid == key && x.FkTypeDevices == typeId)
++                .OrderBy(x => x.NumBlock)
++                .ToListAsync(ct).ConfigureAwait(false);
++        }
++
++        /// <summary>
++        /// Создаёт запись listUUID для (SID, SN, тип). PKlistUUID, NumBlock и regWebUser выдаёт триггер БД.
++        /// </summary>
++        public async Task<ListUuidEntity> CreateListUuidAsync(string sid, string configType, string sn, CancellationToken ct = default)
++        {
++            if(!SupportsListUuid)
++                throw new NotSupportedException("Создание UUID поддерживается только в MySQL.");
++
++            sid = sid?.Trim() ?? string.Empty;
++            sn = sn?.Trim() ?? string.Empty;
++
++            if(sid.Length == 0)
++                throw new ArgumentException("Не выбран SID.");
++            if(sn.Length == 0)
++                throw new ArgumentException("Не указан SN.");
++            if(sn.Length > 32)
++                throw new ArgumentException("SN не должен превышать 32 символа.");
++
++            await using var db = CreateDbContext();
++            await PrepareConnectionAsync(db, ct).ConfigureAwait(false);
++            await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
++
++            try
++            {
++                int typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false)
++                    ?? throw new InvalidOperationException(
++                        $"Для типа '{configType}' нет соответствия в taypeDevices.");
++
++                if(!await db.ListSids.AnyAsync(x => x.PkListSid == sid, ct).ConfigureAwait(false))
++                    throw new InvalidOperationException($"SID '{sid}' отсутствует в listSID.");
++
++                if(await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false) != null)
++                    throw new InvalidOperationException(
++                        $"Запись с SN '{sn}' для этого SID и типа устройства уже существует.");
++
++                await db.Database.ExecuteSqlRawAsync(
++                    @"SET @BDConfigADLDCon_regWebUser =
++                        COALESCE(@BDConfigADLDCon_regWebUser, @app_user, USER());",
++                    ct).ConfigureAwait(false);
++
++                await db.Database.ExecuteSqlInterpolatedAsync(
++                    $@"INSERT INTO `listUUID`
++                        (`SN`, `FKlistSID`, `FKtaypeDevices`, `idtxtDCon`)
++                       VALUES
++                        ({sn}, {sid}, {typeId}, {10000});",
++                    ct).ConfigureAwait(false);
++
++                string key = await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false)
++                    ?? throw new InvalidOperationException(
++                        "Запись listUUID создана, но PKlistUUID не найден.");
++
++                await tx.CommitAsync(ct).ConfigureAwait(false);
++
++                return await db.ListUuids.AsNoTracking()
++                    .SingleAsync(x => x.PkListUuid == key, ct).ConfigureAwait(false);
++            }
++            catch
++            {
++                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
++                throw;
++            }
++        }
++
++        // ConfigType -> taypeDevices.Name. typeCodeUnit для этого не годится:
++        // это числовой код семейства (char(2)), и он не уникален (PU24 и PU24C = "02").
++        private static readonly Dictionary<string, string> TaypeDeviceNameByConfigType =
++            new(StringComparer.OrdinalIgnoreCase)
++            {
++                [TypeIkb] = "IKB24",
++                [TypePuBW] = "PU24",
++                [TypePu] = "PU24C",
++                [TypePu6] = "PU6",
++                [TypeDimmerCabinet] = "DC96",
++                [TypeNetGate] = "NET GATE"
++            };
++
++        private static async Task<int?> TryResolveTypeDeviceIdAsync(AdlpDbContext db, string configType, CancellationToken ct)
++        {
++            if(!TaypeDeviceNameByConfigType.TryGetValue(configType.Trim(), out var name))
++                return null;
++
++            var ids = await db.TaypeDevices.AsNoTracking()
++                .Where(x => x.Name == name)
++                .Select(x => (int?)x.PkTaypeDevices)
++                .Take(2)
++                .ToListAsync(ct).ConfigureAwait(false);
++
++            if(ids.Count > 1)
++                throw new InvalidOperationException(
++                    $"В taypeDevices несколько записей с Name '{name}'.");
++
++            return ids.Count == 1 ? ids[0] : null;
++        }
++
++        private static async Task<string?> FindListUuidCoreAsync(
++            AdlpDbContext db, string sid, string sn, int typeId, CancellationToken ct)
++        {
++            var keys = await db.ListUuids.AsNoTracking()
++                .Where(x => x.FkListSid == sid &&
++                            x.FkTypeDevices == typeId &&
++                            x.Sn == sn)
++                .Select(x => x.PkListUuid)
++                .Take(2)
++                .ToListAsync(ct).ConfigureAwait(false);
++
++            if(keys.Count > 1)
++                throw new InvalidOperationException(
++                    $"В listUUID несколько записей для SID {sid}, SN '{sn}', типа {typeId}.");
++
++            return keys.Count == 1 ? keys[0].Trim() : null;
++        }
++
++        /// <summary>
++        /// Проверяет перед сохранением: SID и listUUID выбраны, listUUID существует, относится к тому же SID
++        /// и к тому же типу устройства. Devices.PKlistSID и PKlistUUID в БД NOT NULL.
++        /// </summary>
++        private async Task ValidateListUuidAsync(
++            AdlpDbContext db, DeviceConfigDtoBase dto, string configType, CancellationToken ct)
++        {
++            string? sid = dto.PkListSid?.Trim();
++            if(string.IsNullOrEmpty(sid))
++                throw new InvalidOperationException("Не назначен SID устройства.");
++
++            string? key = dto.PkListUuid?.Trim();
++            if(string.IsNullOrEmpty(key))
++                throw new InvalidOperationException("Не выбран UUID устройства (listUUID).");
++
++            var row = await db.ListUuids.AsNoTracking()
++                .SingleOrDefaultAsync(x => x.PkListUuid == key, ct).ConfigureAwait(false)
++                ?? throw new InvalidOperationException($"UUID '{key}' отсутствует в listUUID.");
++
++            if(!string.Equals(row.FkListSid.Trim(), sid, StringComparison.OrdinalIgnoreCase))
++                throw new InvalidOperationException(
++                    $"SID устройства ({sid}) не совпадает с SID записи listUUID ({row.FkListSid.Trim()}). " +
++                    "Выберите UUID, созданный для этого SID.");
++
++            int typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false)
++                ?? throw new InvalidOperationException(
++                    $"Для типа '{configType}' нет соответствия в taypeDevices.");
++
++            if(row.FkTypeDevices != typeId)
++                throw new InvalidOperationException(
++                    "Тип устройства не совпадает с типом записи listUUID.");
++        }
++
+         public async Task<List<TaypeDeviceEntity>> GetTaypeDevicesAsync(CancellationToken ct = default)
+         {
+             await using var db = CreateDbContext();
+@@ -582,7 +759,7 @@
+             return (ownAddress, subscriptions);
+         }
+ 
+-        private static string GetConfigTypeFromDeviceName(string deviceName)
++        public static string GetConfigTypeFromDeviceName(string deviceName)
+         {
+             string type = deviceName.Trim()
+                 .Replace(" ", "")
+
+--- a/ADL/AdlpdsConfig/Controls/Devices/ListUuidManagerForm.Designer.cs	1970-01-01 00:00:00.000000000 +0000
++++ b/ADL/AdlpdsConfig/Controls/Devices/ListUuidManagerForm.Designer.cs	2026-11-16 09:26:22.465937868 +0000
+@@ -0,0 +1,180 @@
++﻿namespace AdlpdsConfig.Controls.Devices
++{
++    partial class ListUuidManagerForm
++    {
++        private System.ComponentModel.IContainer? components = null;
++
++        protected override void Dispose(bool disposing)
++        {
++            if(disposing && components != null)
++                components.Dispose();
++            base.Dispose(disposing);
++        }
++
++        #region Windows Form Designer generated code
++
++        private void InitializeComponent()
++        {
++            _lblContext = new Label();
++            _gridUuids = new DataGridView();
++            _groupCreate = new GroupBox();
++            _lblSn = new Label();
++            _mtbSn = new MaskedTextBox();
++            _btnCreate = new Button();
++            _btnRefresh = new Button();
++            _btnClose = new Button();
++            _lblCount = new Label();
++            _lblStatus = new Label();
++            ((System.ComponentModel.ISupportInitialize)_gridUuids).BeginInit();
++            _groupCreate.SuspendLayout();
++            SuspendLayout();
++            // 
++            // _lblContext
++            // 
++            _lblContext.AutoSize = true;
++            _lblContext.Location = new Point(12, 12);
++            _lblContext.Name = "_lblContext";
++            _lblContext.Size = new Size(0, 15);
++            _lblContext.TabIndex = 7;
++            // 
++            // _gridUuids
++            // 
++            _gridUuids.AllowUserToAddRows = false;
++            _gridUuids.AllowUserToDeleteRows = false;
++            _gridUuids.AllowUserToResizeRows = false;
++            _gridUuids.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
++            _gridUuids.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
++            _gridUuids.BackgroundColor = SystemColors.Window;
++            _gridUuids.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
++            _gridUuids.Location = new Point(12, 36);
++            _gridUuids.MultiSelect = false;
++            _gridUuids.Name = "_gridUuids";
++            _gridUuids.ReadOnly = true;
++            _gridUuids.RowHeadersVisible = false;
++            _gridUuids.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
++            _gridUuids.Size = new Size(956, 258);
++            _gridUuids.TabIndex = 0;
++            _gridUuids.DataBindingComplete += GridUuids_DataBindingComplete;
++            // 
++            // _groupCreate
++            // 
++            _groupCreate.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
++            _groupCreate.Controls.Add(_lblSn);
++            _groupCreate.Controls.Add(_mtbSn);
++            _groupCreate.Controls.Add(_btnCreate);
++            _groupCreate.Location = new Point(12, 316);
++            _groupCreate.Name = "_groupCreate";
++            _groupCreate.Size = new Size(956, 126);
++            _groupCreate.TabIndex = 1;
++            _groupCreate.TabStop = false;
++            _groupCreate.Text = "Создать UUID";
++            // 
++            // _lblSn
++            // 
++            _lblSn.AutoSize = true;
++            _lblSn.Location = new Point(14, 27);
++            _lblSn.Name = "_lblSn";
++            _lblSn.Size = new Size(185, 15);
++            _lblSn.TabIndex = 0;
++            _lblSn.Text = "Серийный номер (SN)";
++            // 
++            // _mtbSn
++            // 
++            _mtbSn.Font = new Font("Consolas", 14F);
++            _mtbSn.Location = new Point(17, 47);
++            _mtbSn.Name = "_mtbSn";
++            _mtbSn.Size = new Size(320, 29);
++            _mtbSn.TabIndex = 1;
++            // 
++            // _btnCreate
++            // 
++            _btnCreate.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
++            _btnCreate.Location = new Point(823, 86);
++            _btnCreate.Name = "_btnCreate";
++            _btnCreate.Size = new Size(114, 27);
++            _btnCreate.TabIndex = 2;
++            _btnCreate.Text = "Создать UUID";
++            _btnCreate.UseVisualStyleBackColor = true;
++            _btnCreate.Click += BtnCreate_Click;
++            // 
++            // _btnRefresh
++            // 
++            _btnRefresh.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
++            _btnRefresh.Location = new Point(12, 454);
++            _btnRefresh.Name = "_btnRefresh";
++            _btnRefresh.Size = new Size(96, 27);
++            _btnRefresh.TabIndex = 2;
++            _btnRefresh.Text = "Обновить";
++            _btnRefresh.UseVisualStyleBackColor = true;
++            _btnRefresh.Click += BtnRefresh_Click;
++            // 
++            // _btnClose
++            // 
++            _btnClose.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
++            _btnClose.DialogResult = DialogResult.OK;
++            _btnClose.Location = new Point(893, 454);
++            _btnClose.Name = "_btnClose";
++            _btnClose.Size = new Size(75, 27);
++            _btnClose.TabIndex = 3;
++            _btnClose.Text = "Закрыть";
++            _btnClose.UseVisualStyleBackColor = true;
++            _btnClose.Click += BtnClose_Click;
++            // 
++            // _lblCount
++            // 
++            _lblCount.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
++            _lblCount.AutoSize = true;
++            _lblCount.Location = new Point(12, 299);
++            _lblCount.Name = "_lblCount";
++            _lblCount.Size = new Size(65, 15);
++            _lblCount.TabIndex = 5;
++            _lblCount.Text = "Записей: 0";
++            // 
++            // _lblStatus
++            // 
++            _lblStatus.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
++            _lblStatus.AutoSize = true;
++            _lblStatus.ForeColor = SystemColors.GrayText;
++            _lblStatus.Location = new Point(660, 299);
++            _lblStatus.Name = "_lblStatus";
++            _lblStatus.Size = new Size(0, 15);
++            _lblStatus.TabIndex = 6;
++            // 
++            // ListUuidManagerForm
++            // 
++            AutoScaleDimensions = new SizeF(7F, 15F);
++            AutoScaleMode = AutoScaleMode.Font;
++            ClientSize = new Size(980, 493);
++            Controls.Add(_lblContext);
++            Controls.Add(_lblStatus);
++            Controls.Add(_lblCount);
++            Controls.Add(_btnClose);
++            Controls.Add(_btnRefresh);
++            Controls.Add(_groupCreate);
++            Controls.Add(_gridUuids);
++            MinimumSize = new Size(800, 520);
++            Name = "ListUuidManagerForm";
++            StartPosition = FormStartPosition.CenterParent;
++            Text = "Справочник UUID";
++            Load += ListUuidManagerForm_Load;
++            ((System.ComponentModel.ISupportInitialize)_gridUuids).EndInit();
++            _groupCreate.ResumeLayout(false);
++            _groupCreate.PerformLayout();
++            ResumeLayout(false);
++            PerformLayout();
++        }
++
++        #endregion
++
++        private System.Windows.Forms.Label _lblContext;
++        private System.Windows.Forms.DataGridView _gridUuids;
++        private System.Windows.Forms.GroupBox _groupCreate;
++        private System.Windows.Forms.Label _lblSn;
++        private System.Windows.Forms.MaskedTextBox _mtbSn;
++        private System.Windows.Forms.Button _btnCreate;
++        private System.Windows.Forms.Button _btnRefresh;
++        private System.Windows.Forms.Button _btnClose;
++        private System.Windows.Forms.Label _lblCount;
++        private System.Windows.Forms.Label _lblStatus;
++    }
++}
+
+--- a/ADL/AdlpdsConfig/Controls/Devices/ListUuidManagerForm.cs	1970-01-01 00:00:00.000000000 +0000
++++ b/ADL/AdlpdsConfig/Controls/Devices/ListUuidManagerForm.cs	2026-11-16 09:26:22.465850732 +0000
+@@ -0,0 +1,179 @@
++﻿#nullable enable
++using AdlpLib.Configuration.Application;
++using AdlpLib.Persistence.Entities;
++using System;
++using System.ComponentModel;
++using System.Threading.Tasks;
++using System.Windows.Forms;
++
++namespace AdlpdsConfig.Controls.Devices
++{
++    /// <summary>
++    /// Управление записями listUUID для выбранного SID и типа устройства.
++    /// Пользователь вводит SN по маске, PKlistUUID генерируется триггером MySQL.
++    /// </summary>
++    public partial class ListUuidManagerForm : Form
++    {
++        // Формат SN в БД: "SN :091-0191-006910".
++        private const string SnMask = "SN \\:000-0000-000000";
++
++        private readonly DeviceConfigRepository _repository;
++        private readonly string _sid;
++        private readonly string _configType;
++        private BindingList<ListUuidEntity> _items = new();
++        private bool _loading;
++
++        /// <summary>Ключ последней созданной записи. Выбирается в списке после закрытия формы.</summary>
++        public string? CreatedPkListUuid { get; private set; }
++
++        public ListUuidManagerForm(DeviceConfigRepository repository, string sid, string configType, string? sidCaption = null)
++        {
++            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
++            _sid = sid?.Trim() ?? throw new ArgumentNullException(nameof(sid));
++            _configType = configType ?? throw new ArgumentNullException(nameof(configType));
++
++            InitializeComponent();
++
++            _mtbSn.Mask = SnMask;
++            _mtbSn.AsciiOnly = true;
++            _mtbSn.PromptChar = '_';
++            _mtbSn.TextMaskFormat = MaskFormat.IncludeLiterals;
++
++            _lblContext.Text = $"SID: {sidCaption ?? _sid}     Тип устройства: {_configType}";
++        }
++
++        private async void ListUuidManagerForm_Load(object? sender, EventArgs e)
++        {
++            await ReloadAsync();
++        }
++
++        private async Task ReloadAsync(string? selectKey = null)
++        {
++            try
++            {
++                _loading = true;
++                UseWaitCursor = true;
++                _btnRefresh.Enabled = false;
++                _btnCreate.Enabled = false;
++
++                var records = await _repository.GetListUuidsAsync(_sid, _configType);
++                _items = new BindingList<ListUuidEntity>(records);
++                _gridUuids.DataSource = _items;
++
++                if(!string.IsNullOrWhiteSpace(selectKey))
++                {
++                    foreach(DataGridViewRow row in _gridUuids.Rows)
++                    {
++                        if(row.DataBoundItem is ListUuidEntity item &&
++                           string.Equals(item.PkListUuid?.Trim(), selectKey.Trim(), StringComparison.OrdinalIgnoreCase))
++                        {
++                            row.Selected = true;
++                            _gridUuids.CurrentCell = row.Cells[0];
++                            break;
++                        }
++                    }
++                }
++
++                _lblCount.Text = $"Записей: {_items.Count}";
++                _lblStatus.Text = "Справочник загружен.";
++            }
++            catch(Exception ex)
++            {
++                _lblStatus.Text = "Не удалось загрузить справочник.";
++                MessageBox.Show(this,
++                    "Не удалось загрузить список UUID:\r\n" + ex.GetBaseException().Message,
++                    "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
++            }
++            finally
++            {
++                _loading = false;
++                UseWaitCursor = false;
++                _btnRefresh.Enabled = true;
++                _btnCreate.Enabled = true;
++            }
++        }
++
++        private void GridUuids_DataBindingComplete(object? sender, DataGridViewBindingCompleteEventArgs e)
++        {
++            void Setup(string name, string? header)
++            {
++                var col = _gridUuids.Columns[name];
++                if(col == null) return;
++                if(header == null) col.Visible = false;
++                else col.HeaderText = header;
++            }
++
++            Setup(nameof(ListUuidEntity.PkListUuid), "UUID");
++            Setup(nameof(ListUuidEntity.Sn), "SN");
++            Setup(nameof(ListUuidEntity.NumBlock), "№");
++            Setup(nameof(ListUuidEntity.RegWebUser), "Создал");
++            Setup(nameof(ListUuidEntity.DateRec), "Дата создания");
++
++            Setup(nameof(ListUuidEntity.FkListSid), null);
++            Setup(nameof(ListUuidEntity.FkTypeDevices), null);
++            Setup(nameof(ListUuidEntity.IdTxtDCon), null);
++            Setup(nameof(ListUuidEntity.Mac), null);
++            Setup(nameof(ListUuidEntity.Ip), null);
++            Setup(nameof(ListUuidEntity.Port), null);
++            Setup(nameof(ListUuidEntity.Comment), null);
++            Setup(nameof(ListUuidEntity.DateRecOn), null);
++        }
++
++        private async void BtnCreate_Click(object? sender, EventArgs e)
++        {
++            if(_loading)
++                return;
++
++            if(!_mtbSn.MaskCompleted)
++            {
++                MessageBox.Show(this, "Введите SN полностью: SN :NNN-NNNN-NNNNNN",
++                    "Проверка данных", MessageBoxButtons.OK, MessageBoxIcon.Warning);
++                _mtbSn.Focus();
++                return;
++            }
++
++            string sn = _mtbSn.Text.Trim();
++
++            try
++            {
++                UseWaitCursor = true;
++                _btnCreate.Enabled = false;
++                _btnRefresh.Enabled = false;
++                _lblStatus.Text = "Создание записи…";
++
++                var created = await _repository.CreateListUuidAsync(_sid, _configType, sn);
++                CreatedPkListUuid = created.PkListUuid?.Trim();
++
++                _mtbSn.Clear();
++
++                await ReloadAsync(CreatedPkListUuid);
++                _lblStatus.Text = $"Создан UUID: {CreatedPkListUuid}";
++                _mtbSn.Focus();
++            }
++            catch(Exception ex)
++            {
++                _lblStatus.Text = "Ошибка создания UUID.";
++                MessageBox.Show(this,
++                    "Не удалось создать запись UUID:\r\n" + ex.GetBaseException().Message,
++                    "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
++            }
++            finally
++            {
++                UseWaitCursor = false;
++                _btnCreate.Enabled = true;
++                _btnRefresh.Enabled = true;
++            }
++        }
++
++        private async void BtnRefresh_Click(object? sender, EventArgs e)
++        {
++            await ReloadAsync(CreatedPkListUuid);
++        }
++
++        private void BtnClose_Click(object? sender, EventArgs e)
++        {
++            DialogResult = DialogResult.OK;
++            Close();
++        }
++    }
++}
+
+--- a/ADL/AdlpdsConfig/Controls/fConfSaver.Designer.cs	2026-10-23 08:52:09.000000000 +0000
++++ b/ADL/AdlpdsConfig/Controls/fConfSaver.Designer.cs	2026-11-16 09:26:22.458533532 +0000
+@@ -45,6 +45,12 @@
+             tablesTab = new TabControl();
+             tbgw = new TextBox();
+             GateWayLabel = new Label();
++            SidLabel = new Label();
++            cbSid = new ComboBox();
++            btnManageSid = new Button();
++            UuidLabel = new Label();
++            cbUuid = new ComboBox();
++            btnManageUuid = new Button();
+             ((System.ComponentModel.ISupportInitialize)udBlock).BeginInit();
+             tabPage1.SuspendLayout();
+             ((System.ComponentModel.ISupportInitialize)dgvChannels).BeginInit();
+@@ -219,11 +225,80 @@
+             GateWayLabel.TabIndex = 20;
+             GateWayLabel.Text = "Шлюз:";
+             // 
++            // SidLabel
++            // 
++            SidLabel.AutoSize = true;
++            SidLabel.Font = new Font("Segoe UI", 14F);
++            SidLabel.Location = new Point(270, 46);
++            SidLabel.Name = "SidLabel";
++            SidLabel.Size = new Size(46, 25);
++            SidLabel.TabIndex = 21;
++            SidLabel.Text = "SID:";
++            // 
++            // cbSid
++            // 
++            cbSid.DropDownStyle = ComboBoxStyle.DropDownList;
++            cbSid.Font = new Font("Segoe UI", 12F);
++            cbSid.FormattingEnabled = true;
++            cbSid.Location = new Point(322, 46);
++            cbSid.Name = "cbSid";
++            cbSid.Size = new Size(260, 29);
++            cbSid.TabIndex = 22;
++            cbSid.SelectedValueChanged += cbSid_SelectedValueChanged;
++            // 
++            // btnManageSid
++            // 
++            btnManageSid.Font = new Font("Segoe UI", 12F);
++            btnManageSid.Location = new Point(588, 44);
++            btnManageSid.Name = "btnManageSid";
++            btnManageSid.Size = new Size(52, 33);
++            btnManageSid.TabIndex = 23;
++            btnManageSid.Text = "...";
++            btnManageSid.UseVisualStyleBackColor = true;
++            btnManageSid.Click += btnManageSid_Click;
++            // 
++            // UuidLabel
++            // 
++            UuidLabel.AutoSize = true;
++            UuidLabel.Font = new Font("Segoe UI", 14F);
++            UuidLabel.Location = new Point(270, 79);
++            UuidLabel.Name = "UuidLabel";
++            UuidLabel.Size = new Size(64, 25);
++            UuidLabel.TabIndex = 24;
++            UuidLabel.Text = "UUID:";
++            // 
++            // cbUuid
++            // 
++            cbUuid.DropDownStyle = ComboBoxStyle.DropDownList;
++            cbUuid.Font = new Font("Segoe UI", 12F);
++            cbUuid.FormattingEnabled = true;
++            cbUuid.Location = new Point(340, 79);
++            cbUuid.Name = "cbUuid";
++            cbUuid.Size = new Size(242, 29);
++            cbUuid.TabIndex = 25;
++            // 
++            // btnManageUuid
++            // 
++            btnManageUuid.Font = new Font("Segoe UI", 12F);
++            btnManageUuid.Location = new Point(588, 77);
++            btnManageUuid.Name = "btnManageUuid";
++            btnManageUuid.Size = new Size(52, 33);
++            btnManageUuid.TabIndex = 26;
++            btnManageUuid.Text = "...";
++            btnManageUuid.UseVisualStyleBackColor = true;
++            btnManageUuid.Click += btnManageUuid_Click;
++            // 
+             // fConfSaver
+             // 
+             AutoScaleDimensions = new SizeF(7F, 15F);
+             AutoScaleMode = AutoScaleMode.Font;
+             ClientSize = new Size(655, 561);
++            Controls.Add(btnManageUuid);
++            Controls.Add(cbUuid);
++            Controls.Add(UuidLabel);
++            Controls.Add(btnManageSid);
++            Controls.Add(cbSid);
++            Controls.Add(SidLabel);
+             Controls.Add(GateWayLabel);
+             Controls.Add(tbgw);
+             Controls.Add(tablesTab);
+@@ -270,5 +345,11 @@
+         private TabControl tablesTab;
+         private TextBox tbgw;
+         private Label GateWayLabel;
++        private Label SidLabel;
++        private ComboBox cbSid;
++        private Button btnManageSid;
++        private Label UuidLabel;
++        private ComboBox cbUuid;
++        private Button btnManageUuid;
+     }
+ }
+\ No newline at end of file
+
+--- a/ADL/AdlpdsConfig/Controls/fConfSaver.cs	2026-11-06 12:44:57.000000000 +0000
++++ b/ADL/AdlpdsConfig/Controls/fConfSaver.cs	2026-11-16 09:26:22.464969755 +0000
+@@ -1,9 +1,12 @@
+-﻿using AdlpdsConfig.Service;
++﻿using AdlpdsConfig.Controls.Devices;
++using AdlpdsConfig.Service;
++using AdlpLib.Configuration.Application;
+ using AdlpLib.Core;
+ using AdlpLib.LiveConfig;
+ using AdlpLib.Models.Devices;
+ using AdlpLib.Models.Devices.Exec;
+ using AdlpLib.Models.Devices.PU;
++using AdlpLib.Persistence.Entities;
+ using System.ComponentModel;
+ using System.Data;
+ using System.Net;
+@@ -22,6 +25,17 @@
+ 
+         private readonly AdlpdsService Svc;
+ 
++        /// <summary>Репозиторий БД. Если null, выбор SID скрыт (сохранение в файл / запись на устройство).</summary>
++        private readonly DeviceConfigRepository? _repo;
++
++        /// <summary>SID, выбранный в списке при открытии формы (например, уже назначенный устройству).</summary>
++        public string? InitialPkListSid { get; set; }
++
++        /// <summary>listUUID, выбранный в списке при открытии формы (например, из загруженного файла).</summary>
++        public string? InitialPkListUuid { get; set; }
++
++        private bool UuidSupported => _repo?.SupportsListUuid == true;
++
+         public Device CurrentDevice { get; set; }
+ 
+         public string Mac { get; set; }
+@@ -37,12 +51,209 @@
+ 
+         public DeviceConfigDtoBase? ResultConfig { get; private set; }
+ 
+-        internal fConfSaver(AdlpdsService svc, Device device)
++        internal fConfSaver(AdlpdsService svc, Device device, DeviceConfigRepository? repo = null)
+         {
+             Svc = svc;
+             CurrentDevice = device;
++            _repo = repo;
+ 
+             InitializeComponent();
++
++            bool sidEnabled = _repo != null;
++            SidLabel.Visible = sidEnabled;
++            cbSid.Visible = sidEnabled;
++            btnManageSid.Visible = sidEnabled;
++
++            bool uuidEnabled = _repo?.SupportsListUuid == true;
++            UuidLabel.Visible = uuidEnabled;
++            cbUuid.Visible = uuidEnabled;
++            btnManageUuid.Visible = uuidEnabled;
++        }
++
++        // ------------------------------------------------------------------
++        // SID (справочник listSID), по аналогии с EditPuParametersForm
++        // ------------------------------------------------------------------
++
++        private sealed class SidComboItem
++        {
++            public string? Key { get; set; }
++            public string Caption { get; set; } = "";
++        }
++
++        private string? SelectedSid => (cbSid.SelectedValue as string)?.Trim();
++
++        private async Task LoadSidsAsync(string? selectKey)
++        {
++            if(_repo == null)
++                return;
++
++            try
++            {
++                var records = await _repo.GetListSidsAsync();
++
++                if(IsDisposed)
++                    return;
++
++                BindSids(records, selectKey);
++            }
++            catch(Exception ex)
++            {
++                if(IsDisposed)
++                    return;
++
++                MessageBox.Show(this,
++                    "Не удалось загрузить список SID:\r\n" + ex.GetBaseException().Message,
++                    Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
++            }
++        }
++
++        private void BindSids(IReadOnlyList<ListSidEntity> records, string? selectedKey)
++        {
++            var items = new List<SidComboItem>
++            {
++                new() { Key = null, Caption = "— Не назначен —" }
++            };
++
++            items.AddRange(records.Select(x => new SidComboItem
++            {
++                Key = x.PkListSid?.Trim(),
++                Caption = $"{x.NameObjSid} ({x.PkListSid?.Trim()})"
++            }));
++
++            cbSid.DisplayMember = nameof(SidComboItem.Caption);
++            cbSid.ValueMember = nameof(SidComboItem.Key);
++            cbSid.DataSource = items;
++
++            int index = items.FindIndex(x =>
++                string.Equals(x.Key, selectedKey?.Trim(), StringComparison.OrdinalIgnoreCase));
++
++            cbSid.SelectedIndex = index >= 0 ? index : 0;
++        }
++
++        private async void btnManageSid_Click(object? sender, EventArgs e)
++        {
++            if(_repo == null)
++                return;
++
++            using var form = new ListSidManagerForm(_repo);
++            form.ShowDialog(this);
++
++            await LoadSidsAsync(form.CreatedPkListSid ?? SelectedSid ?? InitialPkListSid);
++        }
++
++        // ------------------------------------------------------------------
++        // UUID (справочник listUUID для выбранного SID и типа устройства)
++        // ------------------------------------------------------------------
++
++        private sealed class UuidComboItem
++        {
++            public string? Key { get; set; }
++            public string Caption { get; set; } = "";
++        }
++
++        private int _uuidLoadVersion;
++
++        private string? SelectedUuid => (cbUuid.SelectedValue as string)?.Trim();
++
++        /// <summary>ConfigType БД для типа подключённого устройства; null, если тип не поддержан.</summary>
++        private string? ConfigTypeOrNull()
++        {
++            try
++            {
++                return DeviceConfigRepository.GetConfigTypeFromDeviceName(CurrentDevice.Name ?? "");
++            }
++            catch(NotSupportedException)
++            {
++                return null;
++            }
++        }
++
++        private void cbSid_SelectedValueChanged(object? sender, EventArgs e)
++        {
++            // Список UUID зависит от SID: при смене SID перечитываем его.
++            if(UuidSupported)
++                _ = LoadUuidsAsync(SelectedUuid ?? InitialPkListUuid);
++        }
++
++        private async Task LoadUuidsAsync(string? selectKey)
++        {
++            if(_repo == null || !_repo.SupportsListUuid)
++                return;
++
++            int version = ++_uuidLoadVersion;
++            string? sid = SelectedSid;
++            string? type = ConfigTypeOrNull();
++            var records = new List<ListUuidEntity>();
++
++            if(!string.IsNullOrEmpty(sid) && type != null)
++            {
++                try
++                {
++                    records = await _repo.GetListUuidsAsync(sid, type);
++                }
++                catch(Exception ex)
++                {
++                    if(!IsDisposed && version == _uuidLoadVersion)
++                        MessageBox.Show(this,
++                            "Не удалось загрузить список UUID:\r\n" + ex.GetBaseException().Message,
++                            Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
++                }
++            }
++
++            if(IsDisposed || version != _uuidLoadVersion)
++                return;
++
++            BindUuids(records, selectKey);
++        }
++
++        private void BindUuids(IReadOnlyList<ListUuidEntity> records, string? selectedKey)
++        {
++            var items = new List<UuidComboItem>
++            {
++                new() { Key = null, Caption = "— Не выбран —" }
++            };
++
++            items.AddRange(records.Select(x => new UuidComboItem
++            {
++                Key = x.PkListUuid?.Trim(),
++                Caption = $"{x.Sn} ({x.PkListUuid?.Trim()})"
++            }));
++
++            cbUuid.DisplayMember = nameof(UuidComboItem.Caption);
++            cbUuid.ValueMember = nameof(UuidComboItem.Key);
++            cbUuid.DataSource = items;
++
++            int index = items.FindIndex(x =>
++                string.Equals(x.Key, selectedKey?.Trim(), StringComparison.OrdinalIgnoreCase));
++
++            cbUuid.SelectedIndex = index >= 0 ? index : 0;
++        }
++
++        private async void btnManageUuid_Click(object? sender, EventArgs e)
++        {
++            if(_repo == null)
++                return;
++
++            string? sid = SelectedSid;
++            if(string.IsNullOrEmpty(sid))
++            {
++                MessageBox.Show("Сначала выберите SID.", Text,
++                    MessageBoxButtons.OK, MessageBoxIcon.Information);
++                return;
++            }
++
++            string? type = ConfigTypeOrNull();
++            if(type == null)
++            {
++                MessageBox.Show($"Тип устройства «{CurrentDevice.Name}» не поддерживается.", Text,
++                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
++                return;
++            }
++
++            using var form = new ListUuidManagerForm(_repo, sid, type, cbSid.Text);
++            form.ShowDialog(this);
++
++            await LoadUuidsAsync(form.CreatedPkListUuid ?? SelectedUuid);
+         }
+ 
+         public void LoadFromConfig(PuColorConfigDto cfg)
+@@ -123,6 +334,15 @@
+ 
+         private void FillCommon(IDeviceCommon cfg)
+         {
++            if(cfg is DeviceConfigDtoBase dto)
++            {
++                if(!string.IsNullOrWhiteSpace(dto.PkListSid))
++                    InitialPkListSid = dto.PkListSid;
++
++                if(!string.IsNullOrWhiteSpace(dto.PkListUuid))
++                    InitialPkListUuid = dto.PkListUuid;
++            }
++
+             MacValue.Text = cfg.Mac ?? "";
+             tbIp.Text = cfg.Ip ?? "";
+             tbMask.Text = cfg.Mask ?? "";
+@@ -132,6 +352,10 @@
+ 
+         private void fConfSaver_Load(object sender, EventArgs e)
+         {
++            // Не блокирует чтение конфигурации с устройства; исключения обрабатываются внутри.
++            if(!DesignMode)
++                _ = LoadSidsAsync(InitialPkListSid);
++
+             if(DesignMode || CurrentDevice == null || _loadedFromConfig)
+                 return;
+ 
+@@ -704,6 +928,12 @@
+             cfg.Uuid = CurrentDevice.Uuid == Guid.Empty
+                 ? null
+                 : CurrentDevice.Uuid;
++
++            if(_repo != null)
++            {
++                cfg.PkListSid = SelectedSid;
++                cfg.PkListUuid = SelectedUuid;
++            }
+         }
+ 
+         private bool ValidateInputs()
+@@ -726,6 +956,23 @@
+                 return false;
+             }
+ 
++            // Для сохранения в БД нужен SID: без него нельзя создать запись listUUID.
++            if(UuidSupported && string.IsNullOrEmpty(SelectedSid))
++            {
++                MessageBox.Show("Выберите SID (кнопка «...» открывает справочник).",
++                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
++                cbSid.Focus();
++                return false;
++            }
++
++            if(UuidSupported && string.IsNullOrEmpty(SelectedUuid))
++            {
++                MessageBox.Show("Выберите UUID (кнопка «...» открывает форму создания по SN).",
++                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
++                cbUuid.Focus();
++                return false;
++            }
++
+             return true;
+         }
+     }
+
+--- a/ADL/AdlpdsConfig/fMain.cs	2026-11-16 08:11:20.000000000 +0000
++++ b/ADL/AdlpdsConfig/fMain.cs	2026-11-16 09:26:22.456139539 +0000
+@@ -135,7 +135,7 @@
+                 return;
+             }
+ 
+-            using var dlg = new fConfSaver(Svc, device)
++            using var dlg = new fConfSaver(Svc, device, _repo)
+             {
+                 StartPosition = FormStartPosition.CenterParent
+             };
+@@ -167,14 +167,10 @@
+ 
+                     config.Id = existingId.Value;
+ 
+-                    // Не затираем назначенный SID и имя устройства.
+-                    if(existingConfig != null)
+-                    {
+-                        config.PkListSid = existingConfig.PkListSid;
+-
+-                        if(!string.IsNullOrWhiteSpace(existingConfig.Name))
+-                            config.Name = existingConfig.Name;
+-                    }
++                    // Имя, заданное пользователем в БД, не затираем.
++                    // SID теперь выбирается в диалоге, поэтому остаётся тот, что выбран там.
++                    if(existingConfig != null && !string.IsNullOrWhiteSpace(existingConfig.Name))
++                        config.Name = existingConfig.Name;
+                 }
+                 else if((!config.Uuid.HasValue || config.Uuid.Value == Guid.Empty) &&
+                         string.IsNullOrWhiteSpace(config.Mac))
+@@ -207,7 +203,7 @@
+             if(_repo == null)
+                 return null;
+ 
+-            if(config.Uuid.HasValue && config.Uuid.Value != Guid.Empty)
++            if(!string.IsNullOrWhiteSpace(config.PkListUuid))
+             {
+                 long? id = await _repo.FindDeviceIdByListUuidAndBlockAsync(config.PkListUuid, config.Block);
+ 

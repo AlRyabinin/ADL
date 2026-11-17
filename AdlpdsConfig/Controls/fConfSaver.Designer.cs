@@ -45,6 +45,11 @@
             tablesTab = new TabControl();
             tbgw = new TextBox();
             GateWayLabel = new Label();
+            SidLabel = new Label();
+            cbSid = new ComboBox();
+            btnManageSid = new Button();
+            SnLabel = new Label();
+            tbSn = new TextBox();
             ((System.ComponentModel.ISupportInitialize)udBlock).BeginInit();
             tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)dgvChannels).BeginInit();
@@ -219,11 +224,66 @@
             GateWayLabel.TabIndex = 20;
             GateWayLabel.Text = "Шлюз:";
             // 
+            // SidLabel
+            // 
+            SidLabel.AutoSize = true;
+            SidLabel.Font = new Font("Segoe UI", 14F);
+            SidLabel.Location = new Point(270, 46);
+            SidLabel.Name = "SidLabel";
+            SidLabel.Size = new Size(46, 25);
+            SidLabel.TabIndex = 21;
+            SidLabel.Text = "SID:";
+            // 
+            // cbSid
+            // 
+            cbSid.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbSid.Font = new Font("Segoe UI", 12F);
+            cbSid.FormattingEnabled = true;
+            cbSid.Location = new Point(322, 46);
+            cbSid.Name = "cbSid";
+            cbSid.Size = new Size(260, 29);
+            cbSid.TabIndex = 22;
+            // 
+            // btnManageSid
+            // 
+            btnManageSid.Font = new Font("Segoe UI", 12F);
+            btnManageSid.Location = new Point(588, 44);
+            btnManageSid.Name = "btnManageSid";
+            btnManageSid.Size = new Size(52, 33);
+            btnManageSid.TabIndex = 23;
+            btnManageSid.Text = "...";
+            btnManageSid.UseVisualStyleBackColor = true;
+            btnManageSid.Click += btnManageSid_Click;
+            // 
+            // SnLabel
+            // 
+            SnLabel.AutoSize = true;
+            SnLabel.Font = new Font("Segoe UI", 14F);
+            SnLabel.Location = new Point(270, 79);
+            SnLabel.Name = "SnLabel";
+            SnLabel.Size = new Size(41, 25);
+            SnLabel.TabIndex = 24;
+            SnLabel.Text = "SN:";
+            // 
+            // tbSn
+            // 
+            tbSn.Font = new Font("Consolas", 14F);
+            tbSn.Location = new Point(322, 79);
+            tbSn.MaxLength = 32;
+            tbSn.Name = "tbSn";
+            tbSn.Size = new Size(318, 29);
+            tbSn.TabIndex = 25;
+            // 
             // fConfSaver
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(655, 561);
+            Controls.Add(tbSn);
+            Controls.Add(SnLabel);
+            Controls.Add(btnManageSid);
+            Controls.Add(cbSid);
+            Controls.Add(SidLabel);
             Controls.Add(GateWayLabel);
             Controls.Add(tbgw);
             Controls.Add(tablesTab);
@@ -270,5 +330,10 @@
         private TabControl tablesTab;
         private TextBox tbgw;
         private Label GateWayLabel;
+        private Label SidLabel;
+        private ComboBox cbSid;
+        private Button btnManageSid;
+        private Label SnLabel;
+        private TextBox tbSn;
     }
 }

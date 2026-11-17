@@ -1,9 +1,12 @@
-﻿using AdlpdsConfig.Service;
+﻿using AdlpdsConfig.Controls.Devices;
+using AdlpdsConfig.Service;
+using AdlpLib.Configuration.Application;
 using AdlpLib.Core;
 using AdlpLib.LiveConfig;
 using AdlpLib.Models.Devices;
 using AdlpLib.Models.Devices.Exec;
 using AdlpLib.Models.Devices.PU;
+using AdlpLib.Persistence.Entities;
 using System.ComponentModel;
 using System.Data;
 using System.Net;
@@ -22,6 +25,12 @@ namespace AdlpdsConfig.Controls
 
         private readonly AdlpdsService Svc;
 
+        /// <summary>Репозиторий БД. Если null, выбор SID скрыт (сохранение в файл / запись на устройство).</summary>
+        private readonly DeviceConfigRepository? _repo;
+
+        /// <summary>SID, выбранный в списке при открытии формы (например, уже назначенный устройству).</summary>
+        public string? InitialPkListSid { get; set; }
+
         public Device CurrentDevice { get; set; }
 
         public string Mac { get; set; }
@@ -37,12 +46,91 @@ namespace AdlpdsConfig.Controls
 
         public DeviceConfigDtoBase? ResultConfig { get; private set; }
 
-        internal fConfSaver(AdlpdsService svc, Device device)
+        internal fConfSaver(AdlpdsService svc, Device device, DeviceConfigRepository? repo = null)
         {
             Svc = svc;
             CurrentDevice = device;
+            _repo = repo;
 
             InitializeComponent();
+
+            bool sidEnabled = _repo != null;
+            SidLabel.Visible = sidEnabled;
+            cbSid.Visible = sidEnabled;
+            btnManageSid.Visible = sidEnabled;
+            SnLabel.Visible = sidEnabled;
+            tbSn.Visible = sidEnabled;
+        }
+
+        // ------------------------------------------------------------------
+        // SID (справочник listSID), по аналогии с EditPuParametersForm
+        // ------------------------------------------------------------------
+
+        private sealed class SidComboItem
+        {
+            public string? Key { get; set; }
+            public string Caption { get; set; } = "";
+        }
+
+        private string? SelectedSid => (cbSid.SelectedValue as string)?.Trim();
+
+        private async Task LoadSidsAsync(string? selectKey)
+        {
+            if(_repo == null)
+                return;
+
+            try
+            {
+                var records = await _repo.GetListSidsAsync();
+
+                if(IsDisposed)
+                    return;
+
+                BindSids(records, selectKey);
+            }
+            catch(Exception ex)
+            {
+                if(IsDisposed)
+                    return;
+
+                MessageBox.Show(this,
+                    "Не удалось загрузить список SID:\r\n" + ex.GetBaseException().Message,
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void BindSids(IReadOnlyList<ListSidEntity> records, string? selectedKey)
+        {
+            var items = new List<SidComboItem>
+            {
+                new() { Key = null, Caption = "— Не назначен —" }
+            };
+
+            items.AddRange(records.Select(x => new SidComboItem
+            {
+                Key = x.PkListSid?.Trim(),
+                Caption = $"{x.NameObjSid} ({x.PkListSid?.Trim()})"
+            }));
+
+            cbSid.DisplayMember = nameof(SidComboItem.Caption);
+            cbSid.ValueMember = nameof(SidComboItem.Key);
+            cbSid.DataSource = items;
+
+            int index = items.FindIndex(x =>
+                string.Equals(x.Key, selectedKey?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            cbSid.SelectedIndex = index >= 0 ? index : 0;
+        }
+
+        private async void btnManageSid_Click(object? sender, EventArgs e)
+        {
+            if(_repo == null)
+                return;
+
+            using var form = new ListSidManagerForm(_repo);
+            form.ShowDialog(this);
+
+            await LoadSidsAsync(form.CreatedPkListSid ?? SelectedSid ?? InitialPkListSid);
         }
 
         public void LoadFromConfig(PuColorConfigDto cfg)
@@ -123,6 +211,15 @@ namespace AdlpdsConfig.Controls
 
         private void FillCommon(IDeviceCommon cfg)
         {
+            if(cfg is DeviceConfigDtoBase dto)
+            {
+                if(!string.IsNullOrWhiteSpace(dto.PkListSid))
+                    InitialPkListSid = dto.PkListSid;
+
+                if(!string.IsNullOrWhiteSpace(dto.Sn))
+                    tbSn.Text = dto.Sn;
+            }
+
             MacValue.Text = cfg.Mac ?? "";
             tbIp.Text = cfg.Ip ?? "";
             tbMask.Text = cfg.Mask ?? "";
@@ -132,6 +229,10 @@ namespace AdlpdsConfig.Controls
 
         private void fConfSaver_Load(object sender, EventArgs e)
         {
+            // Не блокирует чтение конфигурации с устройства; исключения обрабатываются внутри.
+            if(!DesignMode)
+                _ = LoadSidsAsync(InitialPkListSid);
+
             if(DesignMode || CurrentDevice == null || _loadedFromConfig)
                 return;
 
@@ -704,6 +805,12 @@ namespace AdlpdsConfig.Controls
             cfg.Uuid = CurrentDevice.Uuid == Guid.Empty
                 ? null
                 : CurrentDevice.Uuid;
+
+            if(_repo != null)
+            {
+                cfg.PkListSid = SelectedSid;
+                cfg.Sn = tbSn.Text.Trim();
+            }
         }
 
         private bool ValidateInputs()
@@ -723,6 +830,23 @@ namespace AdlpdsConfig.Controls
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 tbMask.Focus();
                 tbMask.SelectAll();
+                return false;
+            }
+
+            // Для сохранения в БД нужен SID: без него нельзя создать запись listUUID.
+            if(_repo != null && string.IsNullOrEmpty(SelectedSid))
+            {
+                MessageBox.Show("Выберите SID (кнопка «...» открывает справочник).",
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                cbSid.Focus();
+                return false;
+            }
+
+            if(_repo != null && string.IsNullOrWhiteSpace(tbSn.Text))
+            {
+                MessageBox.Show("Укажите SN устройства, например: SN :091-0191-006910",
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                tbSn.Focus();
                 return false;
             }
 

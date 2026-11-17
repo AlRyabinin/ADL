@@ -216,6 +216,11 @@ END;", ct).ConfigureAwait(false);
             try
             {
                 string configType = ConfigTypeOf(dto);
+
+                // SID + UUID устройства -> запись listUUID (PKlistUUID выдаёт триггер БД).
+                if(_dbType == DatabaseType.MySQL)
+                    await EnsureListUuidAsync(db, dto, configType, ct).ConfigureAwait(false);
+
                 DeviceEntity device;
 
                 if(dto.Id == 0)
@@ -290,6 +295,135 @@ END;", ct).ConfigureAwait(false);
             entity.Mask = dto.Mask ?? string.Empty;
             entity.Gateway = dto.Gateway ?? string.Empty;
             entity.Block = dto.Block;
+        }
+
+        // ---------------------------------------------------------------------
+        // listUUID: связка SID + физическое устройство (SN) + тип устройства
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Возвращает PKlistUUID для (SID, SN, тип устройства), если запись уже есть. Ничего не создаёт.
+        /// </summary>
+        public async Task<string?> FindListUuidAsync(string? sid, string? sn, string? configType, CancellationToken ct = default)
+        {
+            if(_dbType != DatabaseType.MySQL ||
+               string.IsNullOrWhiteSpace(sid) ||
+               string.IsNullOrWhiteSpace(sn) ||
+               string.IsNullOrWhiteSpace(configType))
+                return null;
+
+            await using var db = CreateDbContext();
+
+            int? typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false);
+            if(typeId == null)
+                return null;
+
+            return await FindListUuidCoreAsync(db, sid.Trim(), sn.Trim(), typeId.Value, ct)
+                .ConfigureAwait(false);
+        }
+
+        // ConfigType -> taypeDevices.Name. typeCodeUnit для этого не годится:
+        // это числовой код семейства (char(2)), и он не уникален (PU24 и PU24C = "02").
+        private static readonly Dictionary<string, string> TaypeDeviceNameByConfigType =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                [TypeIkb] = "IKB24",
+                [TypePuBW] = "PU24",
+                [TypePu] = "PU24C",
+                [TypePu6] = "PU6",
+                [TypeDimmerCabinet] = "DC96",
+                [TypeNetGate] = "NET GATE"
+            };
+
+        private static async Task<int?> TryResolveTypeDeviceIdAsync(AdlpDbContext db, string configType, CancellationToken ct)
+        {
+            if(!TaypeDeviceNameByConfigType.TryGetValue(configType.Trim(), out var name))
+                return null;
+
+            var ids = await db.TaypeDevices.AsNoTracking()
+                .Where(x => x.Name == name)
+                .Select(x => (int?)x.PkTaypeDevices)
+                .Take(2)
+                .ToListAsync(ct).ConfigureAwait(false);
+
+            if(ids.Count > 1)
+                throw new InvalidOperationException(
+                    $"В taypeDevices несколько записей с Name '{name}'.");
+
+            return ids.Count == 1 ? ids[0] : null;
+        }
+
+        private static async Task<string?> FindListUuidCoreAsync(
+            AdlpDbContext db, string sid, string sn, int typeId, CancellationToken ct)
+        {
+            var keys = await db.ListUuids.AsNoTracking()
+                .Where(x => x.FkListSid == sid &&
+                            x.FkTypeDevices == typeId &&
+                            x.Sn == sn)
+                .Select(x => x.PkListUuid)
+                .Take(2)
+                .ToListAsync(ct).ConfigureAwait(false);
+
+            if(keys.Count > 1)
+                throw new InvalidOperationException(
+                    $"В listUUID несколько записей для SID {sid}, SN '{sn}', типа {typeId}.");
+
+            return keys.Count == 1 ? keys[0].Trim() : null;
+        }
+
+        /// <summary>
+        /// Гарантирует запись listUUID для (SID, SN, тип) и проставляет dto.PkListUuid.
+        /// Вызывается внутри транзакции SaveAsync. PKlistUUID, NumBlock и regWebUser выдаёт триггер БД.
+        /// </summary>
+        private async Task EnsureListUuidAsync(
+            AdlpDbContext db, DeviceConfigDtoBase dto, string configType, CancellationToken ct)
+        {
+            // В БД Devices.PKlistSID и PKlistUUID NOT NULL, поэтому без них сохранять нельзя.
+            string? sid = dto.PkListSid?.Trim();
+            if(string.IsNullOrEmpty(sid))
+                throw new InvalidOperationException("Не назначен SID устройства.");
+
+            string? sn = dto.Sn?.Trim();
+            if(string.IsNullOrEmpty(sn))
+            {
+                // Устройство загружено из БД (SN в DTO нет): listUUID уже известен.
+                if(string.IsNullOrWhiteSpace(dto.PkListUuid))
+                    throw new InvalidOperationException("Не указан SN устройства.");
+                return;
+            }
+
+            if(sn.Length > 32)
+                throw new InvalidOperationException("SN не должен превышать 32 символа.");
+
+            int typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Для типа '{configType}' нет соответствия в taypeDevices.");
+
+            if(!await db.ListSids.AnyAsync(x => x.PkListSid == sid, ct).ConfigureAwait(false))
+                throw new InvalidOperationException($"SID '{sid}' отсутствует в listSID.");
+
+            string? existing = await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false);
+            if(existing != null)
+            {
+                dto.PkListUuid = existing;
+                return;
+            }
+
+            await db.Database.ExecuteSqlRawAsync(
+                @"SET @BDConfigADLDCon_regWebUser =
+                    COALESCE(@BDConfigADLDCon_regWebUser, @app_user, USER());",
+                ct).ConfigureAwait(false);
+
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $@"INSERT INTO `listUUID`
+                    (`SN`, `FKlistSID`, `FKtaypeDevices`, `idtxtDCon`)
+                   VALUES
+                    ({sn}, {sid}, {typeId}, {10000});",
+                ct).ConfigureAwait(false);
+
+            dto.PkListUuid = await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    "Запись listUUID создана, но PKlistUUID не найден.");
         }
 
         public async Task<List<TaypeDeviceEntity>> GetTaypeDevicesAsync(CancellationToken ct = default)
@@ -570,7 +704,7 @@ END;", ct).ConfigureAwait(false);
             string ownAddress = await db.DeviceMulticastAddresses
                 .AsNoTracking()
                 .Where(x => x.DeviceId == deviceId)
-                .Select(x => x.MultiCastAdress)
+                .Select(x => x.MultiCastAddress)
                 .FirstOrDefaultAsync(ct) ?? string.Empty;
 
             var subscriptions = await db.DeviceMulticastSubscriptions
@@ -1175,7 +1309,7 @@ END;", ct).ConfigureAwait(false);
                 {
                     var ownerId = await db.DeviceMulticastAddresses
                         .Where(x =>
-                            x.MultiCastAdress == ownAddress &&
+                            x.MultiCastAddress == ownAddress &&
                             x.DeviceId != deviceId)
                         .Select(x => (long?)x.DeviceId)
                         .FirstOrDefaultAsync(ct);
@@ -1198,7 +1332,7 @@ END;", ct).ConfigureAwait(false);
                 {
                     ownChanged = own == null ||
                         !string.Equals(
-                            own.MultiCastAdress,
+                            own.MultiCastAddress,
                             ownAddress,
                             StringComparison.OrdinalIgnoreCase);
                 }
@@ -1231,12 +1365,12 @@ END;", ct).ConfigureAwait(false);
                             new DeviceMulticastAddressEntity
                             {
                                 DeviceId = deviceId,
-                                MultiCastAdress = ownAddress
+                                MultiCastAddress = ownAddress
                             });
                     }
                     else
                     {
-                        own.MultiCastAdress = ownAddress;
+                        own.MultiCastAddress = ownAddress;
                     }
                 }
 
@@ -1390,10 +1524,10 @@ END;", ct).ConfigureAwait(false);
             var own = await db.DeviceMulticastAddresses
                 .SingleOrDefaultAsync(x => x.DeviceId == deviceId, ct);
 
-            if(own != null && !string.IsNullOrWhiteSpace(own.MultiCastAdress))
+            if(own != null && !string.IsNullOrWhiteSpace(own.MultiCastAddress))
             {
                 await tx.CommitAsync(ct);
-                return own.MultiCastAdress;
+                return own.MultiCastAddress;
             }
 
             var range = GetMulticastAddressRange(device.ConfigType);
@@ -1401,7 +1535,7 @@ END;", ct).ConfigureAwait(false);
             var usedAddresses = await db.DeviceMulticastAddresses
                 .AsNoTracking()
                 .Where(x => x.DeviceId != deviceId)
-                .Select(x => x.MultiCastAdress)
+                .Select(x => x.MultiCastAddress)
                 .ToListAsync(ct);
 
             var used = new HashSet<string>(
@@ -1441,12 +1575,12 @@ END;", ct).ConfigureAwait(false);
                     new DeviceMulticastAddressEntity
                     {
                         DeviceId = deviceId,
-                        MultiCastAdress = newAddress
+                        MultiCastAddress = newAddress
                     });
             }
             else
             {
-                own.MultiCastAdress = newAddress;
+                own.MultiCastAddress = newAddress;
             }
 
             await db.SaveChangesAsync(ct);
@@ -1602,7 +1736,7 @@ END;", ct).ConfigureAwait(false);
 
             return await db.DeviceMulticastAddresses
                 .Where(x =>
-                    x.MultiCastAdress == address &&
+                    x.MultiCastAddress == address &&
                     x.DeviceId != currentDeviceId)
                 .Select(x => (long?)x.DeviceId)
                 .FirstOrDefaultAsync(ct);

@@ -248,7 +248,7 @@ public sealed class DeviceMulticastAddressEntity
 {
     public long DeviceId { get; set; }
 
-    public string MultiCastAdress { get; set; } = string.Empty;
+    public string MultiCastAddress { get; set; } = string.Empty;
 }
 
 public sealed class DeviceMulticastSubscriptionEntity

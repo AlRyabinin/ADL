@@ -280,11 +280,11 @@ public sealed class AdlpDbContext : DbContext
 
             entity.HasKey(x => x.DeviceId);
 
-            entity.Property(x => x.MultiCastAdress)
+            entity.Property(x => x.MultiCastAddress)
                 .HasMaxLength(15)
                 .IsRequired();
 
-            entity.HasIndex(x => x.MultiCastAdress)
+            entity.HasIndex(x => x.MultiCastAddress)
                 .IsUnique();
 
             entity.HasOne<DeviceEntity>()

@@ -187,14 +187,14 @@ namespace AdlpLib.Persistence.Migrations
                     b.Property<long>("DeviceId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("MultiCastAdress")
+                    b.Property<string>("MultiCastAddress")
                         .IsRequired()
                         .HasMaxLength(15)
                         .HasColumnType("TEXT");
 
                     b.HasKey("DeviceId");
 
-                    b.HasIndex("MultiCastAdress")
+                    b.HasIndex("MultiCastAddress")
                         .IsUnique();
 
                     b.ToTable("DeviceMulticastAddresses", (string)null);
