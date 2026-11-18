@@ -123,6 +123,7 @@ namespace AdlpdsConfig
             return Svc.GetDevices().FirstOrDefault(d => EndpointKey(d) == devKey);
         }
 
+
         private async void miSaveConfigurationToDb_Click(object sender, EventArgs e)
         {
             var device = GetSelectedDevice();
@@ -131,7 +132,11 @@ namespace AdlpdsConfig
 
             if(_repo == null)
             {
-                MessageBox.Show("Нет подключения к БД конфигураций.");
+                MessageBox.Show(
+                    "Нет подключения к БД конфигураций.",
+                    "Ошибка",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
                 return;
             }
 
@@ -167,22 +172,60 @@ namespace AdlpdsConfig
 
                     config.Id = existingId.Value;
 
-                    // Имя, заданное пользователем в БД, не затираем.
-                    // SID теперь выбирается в диалоге, поэтому остаётся тот, что выбран там.
-                    if(existingConfig != null && !string.IsNullOrWhiteSpace(existingConfig.Name))
+                    // Не затираем имя, ранее заданное в БД.
+                    if(existingConfig != null &&
+                       !string.IsNullOrWhiteSpace(existingConfig.Name))
+                    {
                         config.Name = existingConfig.Name;
+                    }
                 }
-                else if((!config.Uuid.HasValue || config.Uuid.Value == Guid.Empty) &&
+                else if((!config.Uuid.HasValue ||
+                         config.Uuid.Value == Guid.Empty) &&
                         string.IsNullOrWhiteSpace(config.Mac))
                 {
                     throw new InvalidOperationException(
                         "Устройство не передало UUID и MAC-адрес.");
                 }
 
+                Svc.SetNet(
+                    device,
+                    config.Ip,
+                    config.Mask,
+                    config.Gateway);
+
+                if(!string.IsNullOrWhiteSpace(config.PkListSid))
+                {
+                    Svc.SetSystemId(device, config.PkListSid);
+                }
+
+                if(!string.IsNullOrWhiteSpace(config.PkListUuid))
+                {
+                    if(!Guid.TryParse(config.PkListUuid, out Guid uuid))
+                    {
+                        throw new InvalidOperationException(
+                            $"Некорректный UUID: {config.PkListUuid}");
+                    }
+
+                    Svc.SetUuid(device, uuid.ToString("D"));
+
+                    config.Uuid = uuid;
+                }
+
+                bool deviceSaved = await WriteConfigurationToDeviceAsync(
+                    device,
+                    config);
+
+                if(!deviceSaved)
+                {
+                    throw new InvalidOperationException(
+                        "Устройство не подтвердило запись конфигурации.");
+                }
+
                 long savedId = await _repo.SaveAsync(config);
 
                 MessageBox.Show(
-                    $"Конфигурация сохранена в БД.\n\nID записи: {savedId}",
+                    $"Конфигурация успешно записана на устройство " +
+                    $"и сохранена в БД.\n\nID записи: {savedId}",
                     "Сохранение завершено",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -196,6 +239,7 @@ namespace AdlpdsConfig
                     MessageBoxIcon.Error);
             }
         }
+
 
         private async Task<long?> FindExistingDeviceIdAsync(
     DeviceConfigDtoBase config)
@@ -495,6 +539,63 @@ namespace AdlpdsConfig
             configuration.Buttons.AddRange(cfg.Buttons);
 
             return configuration;
+        }
+
+        private LiveControlConfig BuildPUConfig(PuConfigDtoBase cfg)
+        {
+            var configuration = new LiveControlConfig
+            {
+                Block = cfg.Block,
+                Priority = cfg.Priority,
+                PictureSwitchTime = cfg.PictureSwitchTime,
+                PageCount = cfg.PageCount,
+                SwapX = cfg.SwapX,
+                SwapY = cfg.SwapY,
+                Brightness = cfg.Brightness,
+                BrightnessSleep = cfg.BrightnessSleep,
+                SleepTimeout = cfg.SleepTimeout
+            };
+
+            configuration.Channels.AddRange(cfg.Channels);
+            configuration.Groups.AddRange(cfg.Groups);
+            configuration.Pictures.AddRange(cfg.Pictures);
+            configuration.Buttons.AddRange(cfg.Buttons);
+
+            return configuration;
+        }
+
+        private Task<bool> WriteConfigurationToDeviceAsync(Device device, DeviceConfigDtoBase config)
+        {
+            var tcs = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+            bool sent;
+
+            switch(config)
+            {
+                case ExecConfigDto exec:
+                    sent = Svc.WriteExecConfig(
+                        device,
+                        BuildExecConfig(exec),
+                        (dev, ok) => tcs.TrySetResult(ok));
+                    break;
+
+                case PuConfigDtoBase pu:
+                    sent = Svc.WriteControlConfig(
+                        device,
+                        BuildPUConfig(pu),
+                        (dev, ok) => tcs.TrySetResult(ok));
+                    break;
+
+                default:
+                    throw new NotSupportedException(
+                        $"Запись типа {config.GetType().Name} не поддерживается.");
+            }
+
+            if(!sent)
+                tcs.TrySetResult(false);
+
+            return tcs.Task;
         }
 
         private async void miDevicesGroup_Click(object sender, EventArgs e)

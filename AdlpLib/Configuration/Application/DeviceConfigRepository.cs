@@ -18,10 +18,13 @@ using System.Threading.Tasks;
 
 namespace AdlpLib.Configuration.Application
 {
-    /// <summary>Строка представления ListExecChannelsMulticastShot (только нужные колонки).</summary>
-    internal sealed class ExecMulticastRow
+    /// <summary>
+    /// Строка представлений ListExecChannelsMulticastShot / ListPuChannelsMulticastShot
+    /// (индекс канала ADLP и мультикаст-адрес устройства).
+    /// </summary>
+    internal sealed class MulticastViewRow
     {
-        public int ExecIndex { get; set; }
+        public int ChannelIndex { get; set; }
         public string Address { get; set; } = string.Empty;
     }
 
@@ -386,6 +389,128 @@ namespace AdlpLib.Configuration.Application
 
                 return await db.ListUuids.AsNoTracking()
                     .SingleAsync(x => x.PkListUuid == key, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        public async Task<bool> ListSidExistsAsync(string sid, CancellationToken ct = default)
+        {
+            sid = sid?.Trim() ?? string.Empty;
+            if(sid.Length == 0)
+                return false;
+
+            await using var db = CreateDbContext();
+            return await db.ListSids.AsNoTracking()
+                .AnyAsync(x => x.PkListSid == sid, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>Запись listUUID по ключу или null, если её нет (или нет поддержки listUUID).</summary>
+        public async Task<ListUuidEntity?> FindListUuidAsync(string pkListUuid, CancellationToken ct = default)
+        {
+            pkListUuid = pkListUuid?.Trim() ?? string.Empty;
+            if(!SupportsListUuid || pkListUuid.Length == 0)
+                return null;
+
+            await using var db = CreateDbContext();
+            return await db.ListUuids.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.PkListUuid == pkListUuid, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Добавляет в БД SID и/или UUID, считанные с устройства, если их там нет.
+        /// Ключи (PKlistSID, PKlistUUID) передаются явно. Если триггер БД подменяет ключ своим,
+        /// всё откатывается и выбрасывается InvalidOperationException.
+        /// </summary>
+        /// <returns>(SID добавлен, UUID добавлен)</returns>
+        public async Task<(bool SidCreated, bool UuidCreated)> RegisterDeviceIdentityAsync(
+            string sid,
+            string? pkListUuid,
+            string configType,
+            string sidName,
+            string sn,
+            string comment,
+            CancellationToken ct = default)
+        {
+            if(!SupportsListUuid)
+                throw new NotSupportedException("Добавление SID и UUID поддерживается только в MySQL.");
+
+            sid = sid?.Trim() ?? string.Empty;
+            pkListUuid = string.IsNullOrWhiteSpace(pkListUuid) ? null : pkListUuid.Trim();
+            sidName = sidName?.Trim() ?? string.Empty;
+            sn = sn?.Trim() ?? string.Empty;
+            comment ??= string.Empty;
+
+            if(sid.Length != 8)
+                throw new ArgumentException($"SID должен состоять из 8 символов: '{sid}'.");
+            if(sidName.Length == 0 || sidName.Length > 64)
+                throw new ArgumentException("Название SID должно быть от 1 до 64 символов.");
+            if(comment.Length > 255)
+                comment = comment.Substring(0, 255);
+            if(pkListUuid != null && (sn.Length == 0 || sn.Length > 32))
+                throw new ArgumentException("SN должен быть от 1 до 32 символов.");
+
+            await using var db = CreateDbContext();
+            await PrepareConnectionAsync(db, ct).ConfigureAwait(false);
+            await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SET @BDConfigADLDCon_regWebUser =
+                        COALESCE(@BDConfigADLDCon_regWebUser, @app_user, USER());",
+                    ct).ConfigureAwait(false);
+
+                bool sidCreated = false;
+                if(!await db.ListSids.AnyAsync(x => x.PkListSid == sid, ct).ConfigureAwait(false))
+                {
+                    await db.Database.ExecuteSqlInterpolatedAsync(
+                        $@"INSERT INTO `listSID`
+                            (`PKlistSID`, `NameObjSID`, `idtxtDCon`, `comment`)
+                           VALUES
+                            ({sid}, {sidName}, {10000}, {comment});",
+                        ct).ConfigureAwait(false);
+
+                    if(!await db.ListSids.AnyAsync(x => x.PkListSid == sid, ct).ConfigureAwait(false))
+                        throw new InvalidOperationException(
+                            $"БД присвоила SID самостоятельно, а не '{sid}'. " +
+                            "Добавить SID с устройства как есть не удалось, изменения отменены.");
+
+                    sidCreated = true;
+                }
+
+                bool uuidCreated = false;
+                if(pkListUuid != null &&
+                   !await db.ListUuids.AnyAsync(x => x.PkListUuid == pkListUuid, ct).ConfigureAwait(false))
+                {
+                    int typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false)
+                        ?? throw new InvalidOperationException(
+                            $"Для типа '{configType}' нет соответствия в taypeDevices.");
+
+                    if(await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false) != null)
+                        throw new InvalidOperationException(
+                            $"Для SID {sid} и этого типа уже есть запись с SN '{sn}' и другим UUID.");
+
+                    await db.Database.ExecuteSqlInterpolatedAsync(
+                        $@"INSERT INTO `listUUID`
+                            (`PKlistUUID`, `SN`, `FKlistSID`, `FKtaypeDevices`, `idtxtDCon`)
+                           VALUES
+                            ({pkListUuid}, {sn}, {sid}, {typeId}, {10000});",
+                        ct).ConfigureAwait(false);
+
+                    if(!await db.ListUuids.AnyAsync(x => x.PkListUuid == pkListUuid, ct).ConfigureAwait(false))
+                        throw new InvalidOperationException(
+                            $"БД присвоила UUID самостоятельно, а не '{pkListUuid}'. " +
+                            "Добавить UUID с устройства как есть не удалось, изменения отменены.");
+
+                    uuidCreated = true;
+                }
+
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+                return (sidCreated, uuidCreated);
             }
             catch
             {
@@ -1663,8 +1788,9 @@ namespace AdlpLib.Configuration.Application
 
         /// <summary>
         /// Адреса мультикаста устройств, подходящих текущему по пересечению индексов каналов.
-        /// Для PU в MySQL берётся из представления ListExecChannelsMulticastShot одним запросом;
-        /// в остальных случаях (Exec, SQLite, нет представления) используется полный перебор.
+        /// В MySQL адреса берутся одним запросом из представления: для PU это
+        /// ListExecChannelsMulticastShot, для Exec это ListPuChannelsMulticastShot.
+        /// Если представления нет или это SQLite, используется полный перебор устройств.
         /// </summary>
         public async Task<List<string>> GetMatchingMulticastAddressesAsync(long deviceId, CancellationToken ct = default)
         {
@@ -1673,41 +1799,54 @@ namespace AdlpLib.Configuration.Application
             if(currentConfig == null)
                 return new List<string>();
 
-            if(SupportsListUuid && GetMulticastFamily(currentConfig) == MulticastDeviceFamily.Pu)
+            var family = GetMulticastFamily(currentConfig);
+
+            if(SupportsListUuid &&
+               (family == MulticastDeviceFamily.Pu || family == MulticastDeviceFamily.Exec))
             {
                 var indexes = GetMulticastChannelIndexes(currentConfig);
 
                 if(indexes.Count == 0)
                     return new List<string>();
 
+                string sql = family == MulticastDeviceFamily.Pu
+                    ? ExecChannelsMulticastSql
+                    : PuChannelsMulticastSql;
+
                 try
                 {
-                    return await GetExecMulticastAddressesFromViewAsync(indexes, ct);
+                    return await GetMulticastAddressesFromViewAsync(sql, indexes, ct);
                 }
                 catch(DbException ex)
                 {
-                    // Представления нет или нет прав на него: считаем старым способом.
                     System.Diagnostics.Debug.WriteLine(
-                        $"ListExecChannelsMulticastShot недоступно, полный перебор: {ex.Message}");
+                        $"Представление мультикаста недоступно, полный перебор: {ex.Message}");
                 }
             }
 
             return await GetMatchingMulticastAddressesScanAsync(deviceId, currentConfig, ct);
         }
 
-        private async Task<List<string>> GetExecMulticastAddressesFromViewAsync(
-            IEnumerable<int> indexes, CancellationToken ct)
+        private const string ExecChannelsMulticastSql =
+            @"SELECT IndexADLP_ExecChannel AS ChannelIndex,
+                     multicastExecChannel  AS Address
+              FROM ListExecChannelsMulticastShot";
+
+        private const string PuChannelsMulticastSql =
+            @"SELECT IndexADLP_PuChannel   AS ChannelIndex,
+                     multicastPuChannel    AS Address
+              FROM ListPuChannelsMulticastShot";
+
+        private async Task<List<string>> GetMulticastAddressesFromViewAsync(
+            string viewSql, IEnumerable<int> indexes, CancellationToken ct)
         {
             var indexList = indexes.Distinct().ToList();
 
             await using var db = CreateDbContext();
 
             var addresses = await db.Database
-                .SqlQuery<ExecMulticastRow>(
-                    $@"SELECT IndexADLP_ExecChannel AS ExecIndex,
-                              multicastExecChannel  AS Address
-                       FROM ListExecChannelsMulticastShot")
-                .Where(x => indexList.Contains(x.ExecIndex))
+                .SqlQueryRaw<MulticastViewRow>(viewSql)
+                .Where(x => indexList.Contains(x.ChannelIndex))
                 .Select(x => x.Address)
                 .Distinct()
                 .ToListAsync(ct)
@@ -1897,6 +2036,16 @@ namespace AdlpLib.Configuration.Application
             }
 
             return sb.ToString();
+        }
+
+        public async Task<int> GetTaypeDeviceIdAsync(string configType, CancellationToken ct = default)
+        {
+            await using var db = CreateDbContext();
+
+            return await TryResolveTypeDeviceIdAsync(db, configType, ct)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Для типа '{configType}' нет соответствия в taypeDevices.");
         }
     }
 }

@@ -47,8 +47,6 @@ public sealed partial class MainForm : Form
 
     private async void partsButton_Click(object? sender, EventArgs e) => await EditSelectedPartsAsync();
 
-    private void channelControlButton_Click(object? sender, EventArgs e) => OpenChannelControl();
-
     private async void deleteButton_Click(object? sender, EventArgs e) => await RemoveSelectedAsync();
 
     private async void demoSetButton_Click(object? sender, EventArgs e) => await LoadDemoSetAsync();
@@ -216,26 +214,6 @@ public sealed partial class MainForm : Form
         SaveConfigToFile();
         RefreshGrid();
         AppendLog($"Обновлён состав виртуального устройства: {selected.Display}");
-    }
-
-    private void OpenChannelControl()
-    {
-        var selected = GetSelectedDevice();
-        if(selected == null) return;
-
-        foreach(var device in _devices)
-            device.EnsurePartsInitialized();
-
-        // The window models delivery to running emulator instances whose IGMP list
-        // contains the sender's own multicast address and which expose the same index.
-        var running = _servers.Keys.ToHashSet();
-        using var form = new ChannelControlForm(
-            _devices.ToList(),
-            selected,
-            _channelStates,
-            running,
-            AppendLog);
-        form.ShowDialog(this);
     }
 
     private async Task RemoveSelectedAsync()
@@ -534,7 +512,6 @@ public sealed partial class MainForm : Form
 
         _editButton.Enabled = selected;
         _partsButton.Enabled = selected;
-        _channelControlButton.Enabled = selected;
         _deleteButton.Enabled = selected;
         _startSelectedButton.Enabled = selected && !selectedRunning;
         _stopSelectedButton.Enabled = selectedRunning;

@@ -15,6 +15,11 @@ namespace AdlpLib.Core
         public Guid Uuid { get; private set; } = Guid.Empty;
 
         /// <summary>
+        /// Номер системы из статуса устройства (в БД это SID: 8 hex-символов), 0 если не задан
+        /// </summary>
+        public uint SystemId { get; private set; } = 0;
+
+        /// <summary>
         /// Обозначение типа устройства
         /// </summary>
         public string Name { get; private set; } = null;
@@ -72,6 +77,7 @@ namespace AdlpLib.Core
             Block = Status.Block;
             LastActivity = Time;
             Uuid = Status.Uuid;
+            SystemId = Status.SystemId;
             Name = Status.Type;
         }
 
@@ -109,13 +115,15 @@ namespace AdlpLib.Core
         {
             bool Changed = false;
 
-            if (Uuid != Status.Uuid)
+            SystemId = Status.SystemId;
+
+            if(Uuid != Status.Uuid)
             {
                 Uuid = Status.Uuid;
                 Changed = true;
             }
 
-            if (!string.Equals(Name, Status.Type, StringComparison.Ordinal))
+            if(!string.Equals(Name, Status.Type, StringComparison.Ordinal))
             {
                 Name = Status.Type;
                 Changed = true;

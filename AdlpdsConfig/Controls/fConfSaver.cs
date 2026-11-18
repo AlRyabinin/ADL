@@ -170,7 +170,6 @@ namespace AdlpdsConfig.Controls
 
         private void cbSid_SelectedValueChanged(object? sender, EventArgs e)
         {
-            // Список UUID зависит от SID: при смене SID перечитываем его.
             if(UuidSupported)
                 _ = LoadUuidsAsync(SelectedUuid ?? InitialPkListUuid);
         }
@@ -210,13 +209,13 @@ namespace AdlpdsConfig.Controls
         {
             var items = new List<UuidComboItem>
             {
-                new() { Key = null, Caption = "—- Не выбран -—" }
+                new() { Key = null, Caption = "— Не выбран —" }
             };
 
             items.AddRange(records.Select(x => new UuidComboItem
             {
                 Key = x.PkListUuid?.Trim(),
-                Caption = $"{x.PkListUuid?.Trim()} ({x.Sn} )"
+                Caption = $"{x.PkListUuid?.Trim()}"
             }));
 
             cbUuid.DisplayMember = nameof(UuidComboItem.Caption);
@@ -254,6 +253,142 @@ namespace AdlpdsConfig.Controls
             form.ShowDialog(this);
 
             await LoadUuidsAsync(form.CreatedPkListUuid ?? SelectedUuid);
+        }
+
+        // ------------------------------------------------------------------
+        // SID и UUID, считанные с устройства (SystemId = SID, DeviceUUID = listUUID)
+        // ------------------------------------------------------------------
+
+        private Task _initialSidLoad = Task.CompletedTask;
+
+        private void LoadDeviceIdentity()
+        {
+            if(_repo == null)
+                return;
+
+            Svc.ReadIdentity(CurrentDevice, (identity, ok) =>
+            {
+                if(IsDisposed || !IsHandleCreated)
+                    return;
+
+                BeginInvoke(new Action(async () =>
+                {
+                    try
+                    {
+                        await ApplyDeviceIdentityAsync(identity);
+                    }
+                    catch(Exception ex)
+                    {
+                        if(!IsDisposed)
+                            MessageBox.Show(this,
+                                "Не удалось заполнить SID и UUID с устройства:\r\n" + ex.GetBaseException().Message,
+                                Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }));
+            });
+        }
+
+        private async Task ApplyDeviceIdentityAsync(AdlpdsService.DeviceIdentity identity)
+        {
+            if(_repo == null)
+                return;
+
+            // Дожидаемся первичной загрузки списка SID, чтобы она не перезатёрла выбор.
+            await _initialSidLoad;
+            if(IsDisposed)
+                return;
+
+            // SystemId 0 даёт допустимый SID 00000000.
+            string? sid = identity.SystemId.ToString("X8");
+            string? uuid = identity.Uuid != Guid.Empty
+                ? identity.Uuid.ToString("D").ToUpperInvariant()
+                : null;
+            string? configType = ConfigTypeOrNull();
+
+            bool uuidUsable = UuidSupported && configType != null;
+
+            var knownUuid = uuidUsable && uuid != null ? await _repo.FindListUuidAsync(uuid) : null;
+            if(IsDisposed)
+                return;
+
+            // UUID уже есть в БД: SID берём из его записи, чтобы выбор был согласован.
+            if(knownUuid != null)
+            {
+                string dbSid = knownUuid.FkListSid.Trim();
+
+                if(sid != null && !string.Equals(sid, dbSid, StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show(this,
+                        $"SystemId устройства ({sid}) не совпадает с SID в БД ({dbSid}) для UUID {uuid}.\r\n" +
+                        $"Выбран SID из БД: {dbSid}.",
+                        Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+
+                sid = dbSid;
+            }
+
+            bool sidExists = sid != null && await _repo.ListSidExistsAsync(sid);
+            bool needSid = !sidExists;
+            bool needUuid = uuidUsable && knownUuid == null;
+
+            int deviceTypeId = needUuid ? await _repo.GetTaypeDeviceIdAsync(configType!) : 0;
+
+            if(IsDisposed)
+                return;
+
+            // Добавление в БД возможно только в MySQL.
+            if((needSid || needUuid) && _repo.SupportsListUuid)
+            {
+                var notes = new List<string>();
+                if(uuidUsable && uuid == null)
+                    notes.Add("UUID не удалось прочитать с устройства, введите его вручную или оставьте пустым.");
+                if(!string.IsNullOrWhiteSpace(identity.Note))
+                    notes.Add(identity.Note);
+
+                using var dlg = new fDeviceIdentityDialog(
+                    $"{CurrentDevice.Name} {CurrentDevice.Endpoint?.Address}".Trim(),
+                    sid, !needSid,
+                    uuid, !needUuid, uuidUsable,
+                    "",
+                    deviceTypeId,
+                    string.Join("\r\n", notes));
+
+                if(dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    await _repo.RegisterDeviceIdentityAsync(
+                        dlg.Sid,
+                        needUuid ? dlg.Uuid : null,
+                        configType ?? "",
+                        dlg.SidName,
+                        dlg.Sn,
+                        dlg.SidComment);
+
+                    sid = dlg.Sid;
+                    sidExists = true;
+
+                    if(needUuid)
+                        uuid = dlg.Uuid;
+                }
+
+                if(IsDisposed)
+                    return;
+            }
+
+            if(!sidExists || sid == null)
+                return;
+
+            InitialPkListUuid = uuid;
+            await LoadSidsAsync(sid);
+
+            if(UuidSupported && uuid != null && !IsDisposed)
+                await LoadUuidsAsync(uuid);
+        }
+
+        /// <summary>SN для записи listUUID, создаваемой по данным устройства (SN у устройства не читается).</summary>
+        private static string BuildSnForNewDevice(string? uuid)
+        {
+            // 32 hex-символа UUID без дефисов: укладывается в лимит SN и уникален.
+            return Guid.TryParse(uuid, out var g) ? g.ToString("N").ToUpperInvariant() : "";
         }
 
         public void LoadFromConfig(PuColorConfigDto cfg)
@@ -332,29 +467,10 @@ namespace AdlpdsConfig.Controls
             UpdateBaseChannel();
         }
 
-        private void FillCommon(IDeviceCommon cfg)
-        {
-            if(cfg is DeviceConfigDtoBase dto)
-            {
-                if(!string.IsNullOrWhiteSpace(dto.PkListSid))
-                    InitialPkListSid = dto.PkListSid;
-
-                if(!string.IsNullOrWhiteSpace(dto.PkListUuid))
-                    InitialPkListUuid = dto.PkListUuid;
-            }
-
-            MacValue.Text = cfg.Mac ?? "";
-            tbIp.Text = cfg.Ip ?? "";
-            tbMask.Text = cfg.Mask ?? "";
-            tbgw.Text = cfg.Gateway ?? "";
-            udBlock.Value = Math.Max(udBlock.Minimum, Math.Min(udBlock.Maximum, cfg.Block));
-        }
-
         private void fConfSaver_Load(object sender, EventArgs e)
         {
-            // Не блокирует чтение конфигурации с устройства; исключения обрабатываются внутри.
             if(!DesignMode)
-                _ = LoadSidsAsync(InitialPkListSid);
+                _initialSidLoad = LoadSidsAsync(InitialPkListSid);
 
             if(DesignMode || CurrentDevice == null || _loadedFromConfig)
                 return;
@@ -363,6 +479,7 @@ namespace AdlpdsConfig.Controls
             LoadIP();
             LoadMask();
             LoadGateway();
+            LoadDeviceIdentity();
 
             string deviceType = CurrentDevice.Name ?? "";
 
@@ -498,7 +615,7 @@ namespace AdlpdsConfig.Controls
             DataGridView grid = new DataGridView
             {
                 Dock = DockStyle.Fill,
-                AutoGenerateColumns = true,               
+                AutoGenerateColumns = true,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 ReadOnly = true,
                 AllowUserToAddRows = false,
@@ -529,9 +646,9 @@ namespace AdlpdsConfig.Controls
 
             Buttons = new BindingList<LiveControlButtonCfg>(cfg.Buttons.Select(CloneButton).ToList());
 
-            var gridGroups   = CreateGrid(new BindingSource { DataSource = Groups});
+            var gridGroups = CreateGrid(new BindingSource { DataSource = Groups });
             var gridPictures = CreateGrid(new BindingSource { DataSource = Pictures });
-            var gridButtons  = CreateGrid(new BindingSource { DataSource = Buttons });
+            var gridButtons = CreateGrid(new BindingSource { DataSource = Buttons });
 
             tablesTab.TabPages.AddRange(new[]
             {
@@ -956,7 +1073,6 @@ namespace AdlpdsConfig.Controls
                 return false;
             }
 
-            // Для сохранения в БД нужен SID: без него нельзя создать запись listUUID.
             if(UuidSupported && string.IsNullOrEmpty(SelectedSid))
             {
                 MessageBox.Show("Выберите SID (кнопка «...» открывает справочник).",

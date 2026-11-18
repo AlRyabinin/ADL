@@ -71,7 +71,7 @@
             // 
             IPLabel.AutoSize = true;
             IPLabel.Font = new Font("Segoe UI", 14F);
-            IPLabel.Location = new Point(16, 46);
+            IPLabel.Location = new Point(37, 46);
             IPLabel.Name = "IPLabel";
             IPLabel.Size = new Size(32, 25);
             IPLabel.TabIndex = 4;
@@ -81,7 +81,7 @@
             // 
             MaskLabel.AutoSize = true;
             MaskLabel.Font = new Font("Segoe UI", 14F);
-            MaskLabel.Location = new Point(12, 79);
+            MaskLabel.Location = new Point(9, 79);
             MaskLabel.Name = "MaskLabel";
             MaskLabel.Size = new Size(60, 25);
             MaskLabel.TabIndex = 5;
@@ -108,7 +108,7 @@
             // Cancel
             // 
             Cancel.Font = new Font("Segoe UI", 14F);
-            Cancel.Location = new Point(12, 492);
+            Cancel.Location = new Point(12, 514);
             Cancel.Name = "Cancel";
             Cancel.Size = new Size(137, 60);
             Cancel.TabIndex = 8;
@@ -119,7 +119,7 @@
             // Ok
             // 
             Ok.Font = new Font("Segoe UI", 14F);
-            Ok.Location = new Point(517, 492);
+            Ok.Location = new Point(452, 514);
             Ok.Name = "Ok";
             Ok.Size = new Size(126, 60);
             Ok.TabIndex = 9;
@@ -140,11 +140,11 @@
             // udBlock
             // 
             udBlock.Font = new Font("Consolas", 14F);
-            udBlock.Location = new Point(81, 158);
+            udBlock.Location = new Point(81, 184);
             udBlock.Maximum = new decimal(new int[] { 999, 0, 0, 0 });
             udBlock.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             udBlock.Name = "udBlock";
-            udBlock.Size = new Size(39, 29);
+            udBlock.Size = new Size(58, 29);
             udBlock.TabIndex = 12;
             udBlock.Value = new decimal(new int[] { 1, 0, 0, 0 });
             udBlock.ValueChanged += udBlock_ValueChanged;
@@ -153,7 +153,7 @@
             // 
             BlockLabel.AutoSize = true;
             BlockLabel.Font = new Font("Segoe UI", 14F);
-            BlockLabel.Location = new Point(12, 157);
+            BlockLabel.Location = new Point(12, 183);
             BlockLabel.Name = "BlockLabel";
             BlockLabel.Size = new Size(57, 25);
             BlockLabel.TabIndex = 13;
@@ -163,7 +163,7 @@
             // 
             BaseChannel.AutoSize = true;
             BaseChannel.Font = new Font("Segoe UI", 14F);
-            BaseChannel.Location = new Point(126, 158);
+            BaseChannel.Location = new Point(145, 184);
             BaseChannel.Name = "BaseChannel";
             BaseChannel.Size = new Size(145, 25);
             BaseChannel.TabIndex = 16;
@@ -173,7 +173,7 @@
             // 
             BaseChannelValue.AutoSize = true;
             BaseChannelValue.Font = new Font("Segoe UI", 14F);
-            BaseChannelValue.Location = new Point(277, 158);
+            BaseChannelValue.Location = new Point(296, 184);
             BaseChannelValue.Name = "BaseChannelValue";
             BaseChannelValue.Size = new Size(135, 25);
             BaseChannelValue.TabIndex = 17;
@@ -185,7 +185,7 @@
             tabPage1.Location = new Point(4, 24);
             tabPage1.Name = "tabPage1";
             tabPage1.Padding = new Padding(3);
-            tabPage1.Size = new Size(623, 265);
+            tabPage1.Size = new Size(559, 265);
             tabPage1.TabIndex = 0;
             tabPage1.Text = "Каналы";
             tabPage1.UseVisualStyleBackColor = true;
@@ -195,16 +195,16 @@
             dgvChannels.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             dgvChannels.Location = new Point(0, 0);
             dgvChannels.Name = "dgvChannels";
-            dgvChannels.Size = new Size(623, 265);
+            dgvChannels.Size = new Size(559, 265);
             dgvChannels.TabIndex = 14;
             // 
             // tablesTab
             // 
             tablesTab.Controls.Add(tabPage1);
-            tablesTab.Location = new Point(12, 193);
+            tablesTab.Location = new Point(11, 219);
             tablesTab.Name = "tablesTab";
             tablesTab.SelectedIndex = 0;
-            tablesTab.Size = new Size(631, 293);
+            tablesTab.Size = new Size(567, 293);
             tablesTab.TabIndex = 18;
             // 
             // tbgw
@@ -219,7 +219,7 @@
             // 
             GateWayLabel.AutoSize = true;
             GateWayLabel.Font = new Font("Segoe UI", 14F);
-            GateWayLabel.Location = new Point(8, 118);
+            GateWayLabel.Location = new Point(8, 114);
             GateWayLabel.Name = "GateWayLabel";
             GateWayLabel.Size = new Size(67, 25);
             GateWayLabel.TabIndex = 20;
@@ -229,9 +229,9 @@
             // 
             SidLabel.AutoSize = true;
             SidLabel.Font = new Font("Segoe UI", 14F);
-            SidLabel.Location = new Point(270, 46);
+            SidLabel.Location = new Point(245, 46);
             SidLabel.Name = "SidLabel";
-            SidLabel.Size = new Size(46, 25);
+            SidLabel.Size = new Size(44, 25);
             SidLabel.TabIndex = 21;
             SidLabel.Text = "SID:";
             // 
@@ -240,18 +240,18 @@
             cbSid.DropDownStyle = ComboBoxStyle.DropDownList;
             cbSid.Font = new Font("Segoe UI", 12F);
             cbSid.FormattingEnabled = true;
-            cbSid.Location = new Point(322, 46);
+            cbSid.Location = new Point(295, 46);
             cbSid.Name = "cbSid";
-            cbSid.Size = new Size(260, 29);
+            cbSid.Size = new Size(225, 29);
             cbSid.TabIndex = 22;
             cbSid.SelectedValueChanged += cbSid_SelectedValueChanged;
             // 
             // btnManageSid
             // 
             btnManageSid.Font = new Font("Segoe UI", 12F);
-            btnManageSid.Location = new Point(588, 44);
+            btnManageSid.Location = new Point(526, 46);
             btnManageSid.Name = "btnManageSid";
-            btnManageSid.Size = new Size(52, 33);
+            btnManageSid.Size = new Size(52, 30);
             btnManageSid.TabIndex = 23;
             btnManageSid.Text = "...";
             btnManageSid.UseVisualStyleBackColor = true;
@@ -261,9 +261,9 @@
             // 
             UuidLabel.AutoSize = true;
             UuidLabel.Font = new Font("Segoe UI", 14F);
-            UuidLabel.Location = new Point(270, 79);
+            UuidLabel.Location = new Point(15, 149);
             UuidLabel.Name = "UuidLabel";
-            UuidLabel.Size = new Size(64, 25);
+            UuidLabel.Size = new Size(60, 25);
             UuidLabel.TabIndex = 24;
             UuidLabel.Text = "UUID:";
             // 
@@ -272,17 +272,17 @@
             cbUuid.DropDownStyle = ComboBoxStyle.DropDownList;
             cbUuid.Font = new Font("Segoe UI", 12F);
             cbUuid.FormattingEnabled = true;
-            cbUuid.Location = new Point(340, 79);
+            cbUuid.Location = new Point(81, 149);
             cbUuid.Name = "cbUuid";
-            cbUuid.Size = new Size(242, 29);
+            cbUuid.Size = new Size(439, 29);
             cbUuid.TabIndex = 25;
             // 
             // btnManageUuid
             // 
             btnManageUuid.Font = new Font("Segoe UI", 12F);
-            btnManageUuid.Location = new Point(588, 77);
+            btnManageUuid.Location = new Point(526, 149);
             btnManageUuid.Name = "btnManageUuid";
-            btnManageUuid.Size = new Size(52, 33);
+            btnManageUuid.Size = new Size(52, 30);
             btnManageUuid.TabIndex = 26;
             btnManageUuid.Text = "...";
             btnManageUuid.UseVisualStyleBackColor = true;
@@ -292,7 +292,7 @@
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(655, 561);
+            ClientSize = new Size(589, 579);
             Controls.Add(btnManageUuid);
             Controls.Add(cbUuid);
             Controls.Add(UuidLabel);

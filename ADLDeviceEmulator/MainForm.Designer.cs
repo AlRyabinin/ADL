@@ -18,7 +18,6 @@ public sealed partial class MainForm
     private Button createDeviceButton = null!;
     private Button _editButton = null!;
     private Button _partsButton = null!;
-    private Button _channelControlButton = null!;
     private Button _deleteButton = null!;
     private Button demoSetButton = null!;
     private Button loadButton = null!;
@@ -65,7 +64,6 @@ public sealed partial class MainForm
         createDeviceButton = new Button();
         _editButton = new Button();
         _partsButton = new Button();
-        _channelControlButton = new Button();
         _deleteButton = new Button();
         demoSetButton = new Button();
         loadButton = new Button();
@@ -125,7 +123,6 @@ public sealed partial class MainForm
         toolbarPanel.Controls.Add(createDeviceButton);
         toolbarPanel.Controls.Add(_editButton);
         toolbarPanel.Controls.Add(_partsButton);
-        toolbarPanel.Controls.Add(_channelControlButton);
         toolbarPanel.Controls.Add(_deleteButton);
         toolbarPanel.Controls.Add(demoSetButton);
         toolbarPanel.Controls.Add(loadButton);
@@ -204,12 +201,6 @@ public sealed partial class MainForm
         _partsButton.Name = "_partsButton";
         _partsButton.Text = "Состав устройства…";
         _partsButton.UseVisualStyleBackColor = true;
-        _channelControlButton.AutoSize = true;
-        _channelControlButton.Height = 28;
-        _channelControlButton.Margin = new Padding(4, 2, 4, 2);
-        _channelControlButton.Name = "_channelControlButton";
-        _channelControlButton.Text = "Управление каналами…";
-        _channelControlButton.UseVisualStyleBackColor = true;
         _deleteButton.AutoSize = true;
         _deleteButton.Height = 28;
         _deleteButton.Margin = new Padding(4, 2, 4, 2);
@@ -397,7 +388,6 @@ public sealed partial class MainForm
         createDeviceButton.Click += createDeviceButton_Click;
         _editButton.Click += editButton_Click;
         _partsButton.Click += partsButton_Click;
-        _channelControlButton.Click += channelControlButton_Click;
         _deleteButton.Click += deleteButton_Click;
         demoSetButton.Click += demoSetButton_Click;
         loadButton.Click += loadButton_Click;
