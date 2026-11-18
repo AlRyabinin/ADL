@@ -4,7 +4,7 @@ namespace AdlpdsConfig.Controls;
 
 public partial class fUuidDialog : Form
 {
-    public Guid DeviceUuid => Guid.Parse(tbUuid.Text.Trim());
+    public string DeviceUuid => tbUuid.Text.Trim();
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string CurrentUuid { get; set; } = "";

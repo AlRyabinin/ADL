@@ -31,6 +31,11 @@ namespace AdlpdsConfig.Controls
         /// <summary>SID, выбранный в списке при открытии формы (например, уже назначенный устройству).</summary>
         public string? InitialPkListSid { get; set; }
 
+        /// <summary>listUUID, выбранный в списке при открытии формы (например, из загруженного файла).</summary>
+        public string? InitialPkListUuid { get; set; }
+
+        private bool UuidSupported => _repo?.SupportsListUuid == true;
+
         public Device CurrentDevice { get; set; }
 
         public string Mac { get; set; }
@@ -58,8 +63,11 @@ namespace AdlpdsConfig.Controls
             SidLabel.Visible = sidEnabled;
             cbSid.Visible = sidEnabled;
             btnManageSid.Visible = sidEnabled;
-            SnLabel.Visible = sidEnabled;
-            tbSn.Visible = sidEnabled;
+
+            bool uuidEnabled = _repo?.SupportsListUuid == true;
+            UuidLabel.Visible = uuidEnabled;
+            cbUuid.Visible = uuidEnabled;
+            btnManageUuid.Visible = uuidEnabled;
         }
 
         // ------------------------------------------------------------------
@@ -131,6 +139,121 @@ namespace AdlpdsConfig.Controls
             form.ShowDialog(this);
 
             await LoadSidsAsync(form.CreatedPkListSid ?? SelectedSid ?? InitialPkListSid);
+        }
+
+        // ------------------------------------------------------------------
+        // UUID (справочник listUUID для выбранного SID и типа устройства)
+        // ------------------------------------------------------------------
+
+        private sealed class UuidComboItem
+        {
+            public string? Key { get; set; }
+            public string Caption { get; set; } = "";
+        }
+
+        private int _uuidLoadVersion;
+
+        private string? SelectedUuid => (cbUuid.SelectedValue as string)?.Trim();
+
+        /// <summary>ConfigType БД для типа подключённого устройства; null, если тип не поддержан.</summary>
+        private string? ConfigTypeOrNull()
+        {
+            try
+            {
+                return DeviceConfigRepository.GetConfigTypeFromDeviceName(CurrentDevice.Name ?? "");
+            }
+            catch(NotSupportedException)
+            {
+                return null;
+            }
+        }
+
+        private void cbSid_SelectedValueChanged(object? sender, EventArgs e)
+        {
+            // Список UUID зависит от SID: при смене SID перечитываем его.
+            if(UuidSupported)
+                _ = LoadUuidsAsync(SelectedUuid ?? InitialPkListUuid);
+        }
+
+        private async Task LoadUuidsAsync(string? selectKey)
+        {
+            if(_repo == null || !_repo.SupportsListUuid)
+                return;
+
+            int version = ++_uuidLoadVersion;
+            string? sid = SelectedSid;
+            string? type = ConfigTypeOrNull();
+            var records = new List<ListUuidEntity>();
+
+            if(!string.IsNullOrEmpty(sid) && type != null)
+            {
+                try
+                {
+                    records = await _repo.GetListUuidsAsync(sid, type);
+                }
+                catch(Exception ex)
+                {
+                    if(!IsDisposed && version == _uuidLoadVersion)
+                        MessageBox.Show(this,
+                            "Не удалось загрузить список UUID:\r\n" + ex.GetBaseException().Message,
+                            Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+
+            if(IsDisposed || version != _uuidLoadVersion)
+                return;
+
+            BindUuids(records, selectKey);
+        }
+
+        private void BindUuids(IReadOnlyList<ListUuidEntity> records, string? selectedKey)
+        {
+            var items = new List<UuidComboItem>
+            {
+                new() { Key = null, Caption = "—- Не выбран -—" }
+            };
+
+            items.AddRange(records.Select(x => new UuidComboItem
+            {
+                Key = x.PkListUuid?.Trim(),
+                Caption = $"{x.PkListUuid?.Trim()} ({x.Sn} )"
+            }));
+
+            cbUuid.DisplayMember = nameof(UuidComboItem.Caption);
+            cbUuid.ValueMember = nameof(UuidComboItem.Key);
+            cbUuid.DataSource = items;
+
+            int index = items.FindIndex(x =>
+                string.Equals(x.Key, selectedKey?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            cbUuid.SelectedIndex = index >= 0 ? index : 0;
+        }
+
+        private async void btnManageUuid_Click(object? sender, EventArgs e)
+        {
+            if(_repo == null)
+                return;
+
+            string? sid = SelectedSid;
+            if(string.IsNullOrEmpty(sid))
+            {
+                MessageBox.Show("Сначала выберите SID.", Text,
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string? type = ConfigTypeOrNull();
+            if(type == null)
+            {
+                MessageBox.Show($"Тип устройства «{CurrentDevice.Name}» не поддерживается.", Text,
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using var form = new ListUuidManagerForm(_repo, sid, type, cbSid.Text);
+            form.ShowDialog(this);
+
+            await LoadUuidsAsync(form.CreatedPkListUuid ?? SelectedUuid);
         }
 
         public void LoadFromConfig(PuColorConfigDto cfg)
@@ -216,8 +339,8 @@ namespace AdlpdsConfig.Controls
                 if(!string.IsNullOrWhiteSpace(dto.PkListSid))
                     InitialPkListSid = dto.PkListSid;
 
-                if(!string.IsNullOrWhiteSpace(dto.Sn))
-                    tbSn.Text = dto.Sn;
+                if(!string.IsNullOrWhiteSpace(dto.PkListUuid))
+                    InitialPkListUuid = dto.PkListUuid;
             }
 
             MacValue.Text = cfg.Mac ?? "";
@@ -809,7 +932,7 @@ namespace AdlpdsConfig.Controls
             if(_repo != null)
             {
                 cfg.PkListSid = SelectedSid;
-                cfg.Sn = tbSn.Text.Trim();
+                cfg.PkListUuid = SelectedUuid;
             }
         }
 
@@ -834,7 +957,7 @@ namespace AdlpdsConfig.Controls
             }
 
             // Для сохранения в БД нужен SID: без него нельзя создать запись listUUID.
-            if(_repo != null && string.IsNullOrEmpty(SelectedSid))
+            if(UuidSupported && string.IsNullOrEmpty(SelectedSid))
             {
                 MessageBox.Show("Выберите SID (кнопка «...» открывает справочник).",
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -842,11 +965,11 @@ namespace AdlpdsConfig.Controls
                 return false;
             }
 
-            if(_repo != null && string.IsNullOrWhiteSpace(tbSn.Text))
+            if(UuidSupported && string.IsNullOrEmpty(SelectedUuid))
             {
-                MessageBox.Show("Укажите SN устройства, например: SN :091-0191-006910",
+                MessageBox.Show("Выберите UUID (кнопка «...» открывает форму создания по SN).",
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                tbSn.Focus();
+                cbUuid.Focus();
                 return false;
             }
 

@@ -198,17 +198,20 @@ namespace AdlpdsConfig.Service
 			Cfg.Config.SetParameters(device.Endpoint, fields.ToArray());
 		}
 
-		public void SetUuid(Device device, Guid uuid)
-		{
-			Cfg.Config.SetParameters(device.Endpoint, new ParamDataField[]
-			{
+        public void SetUuid(Device device, string uuid)
+        {
+            if(!Guid.TryParse(uuid, out Guid guid))
+                throw new ArgumentException($"Некорректный UUID: '{uuid}'", nameof(uuid));
+
+            Cfg.Config.SetParameters(device.Endpoint, new ParamDataField[]
+            {
 				new ParamDataField(
 					new ParamDataId(ObjectCode.PARAM_OBJECT_DEVICE, 0, 0, ParamCode.DeviceUUID),
-					new ParamDataValue(ParamDataType.PARAM_DATA_TYPE_RAW, uuid.ToByteArray()))
-			});
-		}
+					new ParamDataValue(ParamDataType.PARAM_DATA_TYPE_RAW, guid.ToByteArray()))
+					});
+        }
 
-		public void SetName(Device device, string name)
+        public void SetName(Device device, string name)
 		{
 			Cfg.Config.SetParameters(device.Endpoint, new ParamDataField[]
 			{

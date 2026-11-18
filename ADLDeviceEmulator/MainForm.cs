@@ -15,6 +15,8 @@ public sealed partial class MainForm : Form
     private readonly BindingList<VirtualDeviceConfig> _devices = new();
     private readonly Dictionary<VirtualDeviceConfig, VirtualDeviceServer> _servers = new();
     private readonly object _saveLock = new();
+    // Runtime-only channel states. They are intentionally not written to devices.json.
+    private readonly Dictionary<(Guid Uuid, int Block, int ChannelIndex), bool> _channelStates = new();
     private readonly string _configPath = Path.Combine(AppContext.BaseDirectory, "devices.json");
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -42,6 +44,10 @@ public sealed partial class MainForm : Form
     private void createDeviceButton_Click(object? sender, EventArgs e) => AddDevice();
 
     private async void editButton_Click(object? sender, EventArgs e) => await EditSelectedAsync();
+
+    private async void partsButton_Click(object? sender, EventArgs e) => await EditSelectedPartsAsync();
+
+    private void channelControlButton_Click(object? sender, EventArgs e) => OpenChannelControl();
 
     private async void deleteButton_Click(object? sender, EventArgs e) => await RemoveSelectedAsync();
 
@@ -116,7 +122,11 @@ public sealed partial class MainForm : Form
                 var rows = JsonSerializer.Deserialize<List<VirtualDeviceConfig>>(File.ReadAllText(_configPath), JsonOptions);
                 if(rows != null)
                 {
-                    foreach(var row in rows) _devices.Add(row);
+                    foreach(var row in rows)
+                    {
+                        row.EnsurePartsInitialized();
+                        _devices.Add(row);
+                    }
                     if(rows.Count > 0) return;
                 }
             }
@@ -126,7 +136,10 @@ public sealed partial class MainForm : Form
             }
         }
         foreach(var row in VirtualDeviceConfig.CreateDemoSet(SelectedBindAddress.ToString()))
+        {
+            row.EnsurePartsInitialized();
             _devices.Add(row);
+        }
     }
 
     private void AddDevice()
@@ -181,6 +194,50 @@ public sealed partial class MainForm : Form
         UpdateButtons();
     }
 
+    private async Task EditSelectedPartsAsync()
+    {
+        var selected = GetSelectedDevice();
+        if(selected == null) return;
+
+        bool wasRunning = _servers.ContainsKey(selected);
+        using var dialog = new DevicePartsForm(selected);
+        if(dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        selected.SyncLegacyChannelIndexes();
+        if(wasRunning)
+        {
+            // Перезапуск применяет новые параметры и заново вступает в IGMP-группы.
+            await StopDeviceAsync(selected);
+            if(selected.Enabled)
+                TryStartDevice(selected);
+        }
+
+        SaveConfigToFile();
+        RefreshGrid();
+        AppendLog($"Обновлён состав виртуального устройства: {selected.Display}");
+    }
+
+    private void OpenChannelControl()
+    {
+        var selected = GetSelectedDevice();
+        if(selected == null) return;
+
+        foreach(var device in _devices)
+            device.EnsurePartsInitialized();
+
+        // The window models delivery to running emulator instances whose IGMP list
+        // contains the sender's own multicast address and which expose the same index.
+        var running = _servers.Keys.ToHashSet();
+        using var form = new ChannelControlForm(
+            _devices.ToList(),
+            selected,
+            _channelStates,
+            running,
+            AppendLog);
+        form.ShowDialog(this);
+    }
+
     private async Task RemoveSelectedAsync()
     {
         var selected = GetSelectedDevice();
@@ -211,7 +268,10 @@ public sealed partial class MainForm : Form
 
         _devices.Clear();
         foreach(var row in VirtualDeviceConfig.CreateDemoSet(SelectedBindAddress.ToString()))
+        {
+            row.EnsurePartsInitialized();
             _devices.Add(row);
+        }
         AppendLog("Загружен демонстрационный набор: IKB, PU, PU24, INDIGATE.");
         SaveConfigToFile();
         UpdateButtons();
@@ -238,7 +298,11 @@ public sealed partial class MainForm : Form
                 ?? new List<VirtualDeviceConfig>();
             if(!ValidateConfigurationSet(rows, showMessage: true)) return;
             _devices.Clear();
-            foreach(var row in rows) _devices.Add(row);
+            foreach(var row in rows)
+            {
+                row.EnsurePartsInitialized();
+                _devices.Add(row);
+            }
             AppendLog($"Загружено устройств: {_devices.Count} из {dialog.FileName}");
             SaveConfigToFile();
             UpdateButtons();
@@ -469,6 +533,8 @@ public sealed partial class MainForm : Form
         bool hasEnabledStopped = _devices.Any(x => x.Enabled && !_servers.ContainsKey(x));
 
         _editButton.Enabled = selected;
+        _partsButton.Enabled = selected;
+        _channelControlButton.Enabled = selected;
         _deleteButton.Enabled = selected;
         _startSelectedButton.Enabled = selected && !selectedRunning;
         _stopSelectedButton.Enabled = selectedRunning;

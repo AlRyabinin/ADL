@@ -48,8 +48,9 @@
             SidLabel = new Label();
             cbSid = new ComboBox();
             btnManageSid = new Button();
-            SnLabel = new Label();
-            tbSn = new TextBox();
+            UuidLabel = new Label();
+            cbUuid = new ComboBox();
+            btnManageUuid = new Button();
             ((System.ComponentModel.ISupportInitialize)udBlock).BeginInit();
             tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)dgvChannels).BeginInit();
@@ -243,6 +244,7 @@
             cbSid.Name = "cbSid";
             cbSid.Size = new Size(260, 29);
             cbSid.TabIndex = 22;
+            cbSid.SelectedValueChanged += cbSid_SelectedValueChanged;
             // 
             // btnManageSid
             // 
@@ -255,32 +257,45 @@
             btnManageSid.UseVisualStyleBackColor = true;
             btnManageSid.Click += btnManageSid_Click;
             // 
-            // SnLabel
+            // UuidLabel
             // 
-            SnLabel.AutoSize = true;
-            SnLabel.Font = new Font("Segoe UI", 14F);
-            SnLabel.Location = new Point(270, 79);
-            SnLabel.Name = "SnLabel";
-            SnLabel.Size = new Size(41, 25);
-            SnLabel.TabIndex = 24;
-            SnLabel.Text = "SN:";
+            UuidLabel.AutoSize = true;
+            UuidLabel.Font = new Font("Segoe UI", 14F);
+            UuidLabel.Location = new Point(270, 79);
+            UuidLabel.Name = "UuidLabel";
+            UuidLabel.Size = new Size(64, 25);
+            UuidLabel.TabIndex = 24;
+            UuidLabel.Text = "UUID:";
             // 
-            // tbSn
+            // cbUuid
             // 
-            tbSn.Font = new Font("Consolas", 14F);
-            tbSn.Location = new Point(322, 79);
-            tbSn.MaxLength = 32;
-            tbSn.Name = "tbSn";
-            tbSn.Size = new Size(318, 29);
-            tbSn.TabIndex = 25;
+            cbUuid.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbUuid.Font = new Font("Segoe UI", 12F);
+            cbUuid.FormattingEnabled = true;
+            cbUuid.Location = new Point(340, 79);
+            cbUuid.Name = "cbUuid";
+            cbUuid.Size = new Size(242, 29);
+            cbUuid.TabIndex = 25;
+            // 
+            // btnManageUuid
+            // 
+            btnManageUuid.Font = new Font("Segoe UI", 12F);
+            btnManageUuid.Location = new Point(588, 77);
+            btnManageUuid.Name = "btnManageUuid";
+            btnManageUuid.Size = new Size(52, 33);
+            btnManageUuid.TabIndex = 26;
+            btnManageUuid.Text = "...";
+            btnManageUuid.UseVisualStyleBackColor = true;
+            btnManageUuid.Click += btnManageUuid_Click;
             // 
             // fConfSaver
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(655, 561);
-            Controls.Add(tbSn);
-            Controls.Add(SnLabel);
+            Controls.Add(btnManageUuid);
+            Controls.Add(cbUuid);
+            Controls.Add(UuidLabel);
             Controls.Add(btnManageSid);
             Controls.Add(cbSid);
             Controls.Add(SidLabel);
@@ -333,7 +348,8 @@
         private Label SidLabel;
         private ComboBox cbSid;
         private Button btnManageSid;
-        private Label SnLabel;
-        private TextBox tbSn;
+        private Label UuidLabel;
+        private ComboBox cbUuid;
+        private Button btnManageUuid;
     }
 }

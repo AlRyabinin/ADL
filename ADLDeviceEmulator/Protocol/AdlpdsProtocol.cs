@@ -10,7 +10,9 @@ internal static class AdlpdsProtocol
 
     public const ushort CommandGetParam = 0;
     public const ushort CommandSetParam = 1;
+    public const ushort CommandChannelSwitch = 2;
     public const ushort CommandStatus = 3;
+    public const ushort CommandChannelSwitchEx = 10;
     public const ushort CommandGetStatus = 11;
     public const ushort ResponseFlag = 0x8000;
 
@@ -22,6 +24,7 @@ internal static class AdlpdsProtocol
     public const byte ObjectPixelgateChannel = 6;
     public const byte ObjectIgmp = 7;
     public const byte ObjectControlButton = 100;
+    public const byte ObjectGateConveyor = 101;
 
     public const ushort ParamDeviceName = 1;
     public const ushort ParamDeviceBlock = 2;
@@ -46,9 +49,29 @@ internal static class AdlpdsProtocol
     public const ushort ParamDevicePriority = 30;
     public const ushort ParamDeviceStartChannel = 31;
     public const ushort ParamDevicePictureSwitchTime = 32;
+    public const ushort ParamDevicePictureStream = 33;
+    public const ushort ParamDevicePictureFrameTime = 34;
+    public const ushort ParamDeviceSystemId = 35;
+    public const ushort ParamDeviceTimeRequest = 36;
+    public const ushort ParamDeviceLocation = 37;
     public const ushort ParamStreamId = 60;
     public const ushort ParamStreamStart = 61;
+    public const ushort ParamDeviceArtnetNet2Enabled = 80;
+    public const ushort ParamDeviceArtnetNet10Enabled = 81;
+    public const ushort ParamDeviceArtnetNet2Address = 82;
+    public const ushort ParamDeviceArtnetNet2Netmask = 83;
+    public const ushort ParamDeviceArtnetNet10Address = 84;
+    public const ushort ParamDeviceArtnetNet10Netmask = 85;
+
     public const ushort ParamPictureName = 90;
+    public const ushort ParamPictureTriggerPresetWrite = 91;
+    public const ushort ParamPictureFadeIn = 92;
+    public const ushort ParamPictureFadeOut = 93;
+    public const ushort ParamPicturePreset = 94;
+    public const ushort ParamPictureMux1 = 95;
+    public const ushort ParamPictureMux2 = 96;
+    public const ushort ParamPictureMux3 = 97;
+    public const ushort ParamPictureMux4 = 98;
     public const ushort ParamControlButtonPage = 100;
     public const ushort ParamControlButtonLocal = 101;
     public const ushort ParamControlButtonPosX = 102;
@@ -61,11 +84,27 @@ internal static class AdlpdsProtocol
     public const ushort ParamDeviceBrightness = 123;
     public const ushort ParamDeviceBrightnessSleep = 124;
     public const ushort ParamDeviceSleepTimeout = 125;
+    public const ushort ParamDeviceAcnVersion = 126;
+    public const ushort ParamDeviceTargetTemperature = 127;
     public const ushort ParamDeviceStatusTransport = 128;
     public const ushort ParamDeviceStatusMulticastAddress = 129;
     public const ushort ParamIgmpAddress = 200;
     public const ushort ParamGroupIndex = 50;
     public const ushort ParamGroupChannelStart = 1000;
+    public const ushort ParamGroupChannelEnd = 1100;
+
+    public const ushort ParamGateConveyorRecordable = 150;
+    public const ushort ParamGateConveyorSourceA = 151;
+    public const ushort ParamGateConveyorSourceB = 152;
+    public const ushort ParamGateConveyorSourceC = 153;
+    public const ushort ParamGateConveyorDestination = 154;
+    public const ushort ParamGateConveyorSourceSelect = 155;
+    public const ushort ParamGateConveyorSumType = 156;
+    public const ushort ParamGateConveyorSumBFrom = 157;
+    public const ushort ParamGateConveyorSumBTo = 158;
+    public const ushort ParamGateConveyorSumCFrom = 159;
+    public const ushort ParamGateConveyorSumCTo = 160;
+    public const ushort ParamPixelgateLineName = 180;
 
     public const byte DataRaw = 2;
     public const byte DataU8 = 3;
@@ -115,6 +154,7 @@ internal static class AdlpdsProtocol
         }
 
         public uint AsU32() => Data.Length >= 4 ? BinaryPrimitives.ReadUInt32LittleEndian(Data) : 0;
+        public ushort AsU16() => Data.Length >= 2 ? BinaryPrimitives.ReadUInt16LittleEndian(Data) : (ushort)0;
         public byte AsU8() => Data.Length > 0 ? Data[0] : (byte)0;
         public string AsString()
         {
@@ -240,9 +280,9 @@ internal static class AdlpdsProtocol
 
         ushort capability = type.ToUpperInvariant() switch
         {
-            "IKB" => 0x0021,      // EXEC + CFG
-            "PU" or "PU24" => 0x0030, // CTRL + CFG
-            "INDIGATE" => 0x0020, // CFG
+            "IKB" or "EXEC" or "DIM220" or "DIMCABINET" => 0x0021, // EXEC + CFG
+            "PU" or "PU24" or "PU6" or "PUBW" => 0x0030, // CTRL + CFG
+            "INDIGATE" or "NETGATE" => 0x0020, // CFG
             _ => 0x0020
         };
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(28, 2), capability);

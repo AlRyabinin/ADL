@@ -18,6 +18,13 @@ using System.Threading.Tasks;
 
 namespace AdlpLib.Configuration.Application
 {
+    /// <summary>Строка представления ListExecChannelsMulticastShot (только нужные колонки).</summary>
+    internal sealed class ExecMulticastRow
+    {
+        public int ExecIndex { get; set; }
+        public string Address { get; set; } = string.Empty;
+    }
+
     /// <summary>Краткие сведения об устройстве для отображения в списке.</summary>
     public class DeviceHeader
     {
@@ -111,56 +118,56 @@ namespace AdlpLib.Configuration.Application
             {
                 await ExecuteDdlAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_bi;", ct).ConfigureAwait(false);
                 await ExecuteDdlAsync(conn, @"
-CREATE TRIGGER trg_devices_bi
-BEFORE INSERT ON Devices
-FOR EACH ROW
-BEGIN
-    SET NEW.CreatedAt = UTC_TIMESTAMP();
-    SET NEW.UpdatedAt = UTC_TIMESTAMP();
-    SET NEW.CreatedBy = COALESCE(@app_user, USER());
-    SET NEW.UpdatedBy = COALESCE(@app_user, USER());
-END;", ct).ConfigureAwait(false);
+                    CREATE TRIGGER trg_devices_bi
+                    BEFORE INSERT ON Devices
+                    FOR EACH ROW
+                    BEGIN
+                        SET NEW.CreatedAt = UTC_TIMESTAMP();
+                        SET NEW.UpdatedAt = UTC_TIMESTAMP();
+                        SET NEW.CreatedBy = COALESCE(@app_user, USER());
+                        SET NEW.UpdatedBy = COALESCE(@app_user, USER());
+                    END;", ct).ConfigureAwait(false);
 
                 await ExecuteDdlAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_bu;", ct).ConfigureAwait(false);
                 await ExecuteDdlAsync(conn, @"
-CREATE TRIGGER trg_devices_bu
-BEFORE UPDATE ON Devices
-FOR EACH ROW
-BEGIN
-    SET NEW.UpdatedAt = UTC_TIMESTAMP();
-    SET NEW.UpdatedBy = COALESCE(@app_user, USER());
-    SET NEW.CreatedAt = OLD.CreatedAt;
-    SET NEW.CreatedBy = OLD.CreatedBy;
-END;", ct).ConfigureAwait(false);
+                    CREATE TRIGGER trg_devices_bu
+                    BEFORE UPDATE ON Devices
+                    FOR EACH ROW
+                    BEGIN
+                        SET NEW.UpdatedAt = UTC_TIMESTAMP();
+                        SET NEW.UpdatedBy = COALESCE(@app_user, USER());
+                        SET NEW.CreatedAt = OLD.CreatedAt;
+                        SET NEW.CreatedBy = OLD.CreatedBy;
+                    END;", ct).ConfigureAwait(false);
             }
             else
             {
                 await ExecuteDdlAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_ai;", ct).ConfigureAwait(false);
                 await ExecuteDdlAsync(conn, @"
-CREATE TRIGGER trg_devices_ai
-AFTER INSERT ON Devices
-FOR EACH ROW
-BEGIN
-    UPDATE Devices
-       SET CreatedAt = datetime('now'),
-           UpdatedAt = datetime('now'),
-           CreatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), ''),
-           UpdatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), '')
-     WHERE Id = NEW.Id;
-END;", ct).ConfigureAwait(false);
+                    CREATE TRIGGER trg_devices_ai
+                    AFTER INSERT ON Devices
+                    FOR EACH ROW
+                    BEGIN
+                        UPDATE Devices
+                           SET CreatedAt = datetime('now'),
+                               UpdatedAt = datetime('now'),
+                               CreatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), ''),
+                               UpdatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), '')
+                         WHERE Id = NEW.Id;
+                    END;", ct).ConfigureAwait(false);
 
                 await ExecuteDdlAsync(conn, "DROP TRIGGER IF EXISTS trg_devices_au;", ct).ConfigureAwait(false);
                 await ExecuteDdlAsync(conn, @"
-CREATE TRIGGER trg_devices_au
-AFTER UPDATE ON Devices
-FOR EACH ROW
-WHEN NEW.UpdatedAt IS OLD.UpdatedAt
-BEGIN
-    UPDATE Devices
-       SET UpdatedAt = datetime('now'),
-           UpdatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), '')
-     WHERE Id = NEW.Id;
-END;", ct).ConfigureAwait(false);
+                    CREATE TRIGGER trg_devices_au
+                    AFTER UPDATE ON Devices
+                    FOR EACH ROW
+                    WHEN NEW.UpdatedAt IS OLD.UpdatedAt
+                    BEGIN
+                        UPDATE Devices
+                           SET UpdatedAt = datetime('now'),
+                               UpdatedBy = COALESCE((SELECT value FROM _audit_context WHERE key = 'user'), '')
+                         WHERE Id = NEW.Id;
+                    END;", ct).ConfigureAwait(false);
             }
         }
 
@@ -195,9 +202,9 @@ END;", ct).ConfigureAwait(false);
             }
             else
             {
-                await db.Database
-                    .ExecuteSqlRawAsync("SET @app_user = {0};", new object[] { userName }, ct)
-                    .ConfigureAwait(false);
+                await db.Database.ExecuteSqlRawAsync("SET @app_user = {0};", new object[] { userName }, ct).ConfigureAwait(false);
+
+                await db.Database.ExecuteSqlRawAsync("SET @BDConfigADLDCon_regWebUser = {0};", new object[] { userName }, ct).ConfigureAwait(false);
             }
         }
 
@@ -217,9 +224,9 @@ END;", ct).ConfigureAwait(false);
             {
                 string configType = ConfigTypeOf(dto);
 
-                // SID + UUID устройства -> запись listUUID (PKlistUUID выдаёт триггер БД).
+                // Выбранные SID и listUUID должны существовать и соответствовать друг другу и типу устройства.
                 if(_dbType == DatabaseType.MySQL)
-                    await EnsureListUuidAsync(db, dto, configType, ct).ConfigureAwait(false);
+                    await ValidateListUuidAsync(db, dto, configType, ct).ConfigureAwait(false);
 
                 DeviceEntity device;
 
@@ -301,25 +308,90 @@ END;", ct).ConfigureAwait(false);
         // listUUID: связка SID + физическое устройство (SN) + тип устройства
         // ---------------------------------------------------------------------
 
-        /// <summary>
-        /// Возвращает PKlistUUID для (SID, SN, тип устройства), если запись уже есть. Ничего не создаёт.
-        /// </summary>
-        public async Task<string?> FindListUuidAsync(string? sid, string? sn, string? configType, CancellationToken ct = default)
+        /// <summary>listUUID существует только в MySQL-схеме.</summary>
+        public bool SupportsListUuid => _dbType == DatabaseType.MySQL;
+
+        /// <summary>Записи listUUID для данного SID и типа устройства (для выпадающего списка).</summary>
+        public async Task<List<ListUuidEntity>> GetListUuidsAsync(string sid, string configType, CancellationToken ct = default)
         {
-            if(_dbType != DatabaseType.MySQL ||
-               string.IsNullOrWhiteSpace(sid) ||
-               string.IsNullOrWhiteSpace(sn) ||
-               string.IsNullOrWhiteSpace(configType))
-                return null;
+            if(!SupportsListUuid || string.IsNullOrWhiteSpace(sid))
+                return new List<ListUuidEntity>();
 
             await using var db = CreateDbContext();
 
-            int? typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false);
-            if(typeId == null)
-                return null;
+            int typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Для типа '{configType}' нет соответствия в taypeDevices.");
 
-            return await FindListUuidCoreAsync(db, sid.Trim(), sn.Trim(), typeId.Value, ct)
-                .ConfigureAwait(false);
+            string key = sid.Trim();
+
+            return await db.ListUuids.AsNoTracking()
+                .Where(x => x.FkListSid == key && x.FkTypeDevices == typeId)
+                .OrderBy(x => x.NumBlock)
+                .ToListAsync(ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Создаёт запись listUUID для (SID, SN, тип). PKlistUUID, NumBlock и regWebUser выдаёт триггер БД.
+        /// </summary>
+        public async Task<ListUuidEntity> CreateListUuidAsync(string sid, string configType, string sn, CancellationToken ct = default)
+        {
+            if(!SupportsListUuid)
+                throw new NotSupportedException("Создание UUID поддерживается только в MySQL.");
+
+            sid = sid?.Trim() ?? string.Empty;
+            sn = sn?.Trim() ?? string.Empty;
+
+            if(sid.Length == 0)
+                throw new ArgumentException("Не выбран SID.");
+            if(sn.Length == 0)
+                throw new ArgumentException("Не указан SN.");
+            if(sn.Length > 32)
+                throw new ArgumentException("SN не должен превышать 32 символа.");
+
+            await using var db = CreateDbContext();
+            await PrepareConnectionAsync(db, ct).ConfigureAwait(false);
+            await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+            try
+            {
+                int typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        $"Для типа '{configType}' нет соответствия в taypeDevices.");
+
+                if(!await db.ListSids.AnyAsync(x => x.PkListSid == sid, ct).ConfigureAwait(false))
+                    throw new InvalidOperationException($"SID '{sid}' отсутствует в listSID.");
+
+                if(await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false) != null)
+                    throw new InvalidOperationException(
+                        $"Запись с SN '{sn}' для этого SID и типа устройства уже существует.");
+
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SET @BDConfigADLDCon_regWebUser =
+                        COALESCE(@BDConfigADLDCon_regWebUser, @app_user, USER());",
+                    ct).ConfigureAwait(false);
+
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $@"INSERT INTO `listUUID`
+                        (`SN`, `FKlistSID`, `FKtaypeDevices`, `idtxtDCon`)
+                       VALUES
+                        ({sn}, {sid}, {typeId}, {10000});",
+                    ct).ConfigureAwait(false);
+
+                string key = await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        "Запись listUUID создана, но PKlistUUID не найден.");
+
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+
+                return await db.ListUuids.AsNoTracking()
+                    .SingleAsync(x => x.PkListUuid == key, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
         }
 
         // ConfigType -> taypeDevices.Name. typeCodeUnit для этого не годится:
@@ -354,76 +426,62 @@ END;", ct).ConfigureAwait(false);
         }
 
         private static async Task<string?> FindListUuidCoreAsync(
-            AdlpDbContext db, string sid, string sn, int typeId, CancellationToken ct)
+    AdlpDbContext db,
+    string sid,
+    string sn,
+    int typeId,
+    CancellationToken ct)
         {
-            var keys = await db.ListUuids.AsNoTracking()
+            var keys = await db.ListUuids
+                .AsNoTracking()
                 .Where(x => x.FkListSid == sid &&
                             x.FkTypeDevices == typeId &&
                             x.Sn == sn)
                 .Select(x => x.PkListUuid)
                 .Take(2)
-                .ToListAsync(ct).ConfigureAwait(false);
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
 
             if(keys.Count > 1)
                 throw new InvalidOperationException(
                     $"В listUUID несколько записей для SID {sid}, SN '{sn}', типа {typeId}.");
 
-            return keys.Count == 1 ? keys[0].Trim() : null;
+            return keys.Count == 1
+                ? keys[0].ToString().ToUpperInvariant()
+                : null;
         }
 
         /// <summary>
-        /// Гарантирует запись listUUID для (SID, SN, тип) и проставляет dto.PkListUuid.
-        /// Вызывается внутри транзакции SaveAsync. PKlistUUID, NumBlock и regWebUser выдаёт триггер БД.
+        /// Проверяет перед сохранением: SID и listUUID выбраны, listUUID существует, относится к тому же SID
+        /// и к тому же типу устройства. Devices.PKlistSID и PKlistUUID в БД NOT NULL.
         /// </summary>
-        private async Task EnsureListUuidAsync(
+        private async Task ValidateListUuidAsync(
             AdlpDbContext db, DeviceConfigDtoBase dto, string configType, CancellationToken ct)
         {
-            // В БД Devices.PKlistSID и PKlistUUID NOT NULL, поэтому без них сохранять нельзя.
             string? sid = dto.PkListSid?.Trim();
             if(string.IsNullOrEmpty(sid))
                 throw new InvalidOperationException("Не назначен SID устройства.");
 
-            string? sn = dto.Sn?.Trim();
-            if(string.IsNullOrEmpty(sn))
-            {
-                // Устройство загружено из БД (SN в DTO нет): listUUID уже известен.
-                if(string.IsNullOrWhiteSpace(dto.PkListUuid))
-                    throw new InvalidOperationException("Не указан SN устройства.");
-                return;
-            }
+            string? key = dto.PkListUuid?.Trim();
+            if(string.IsNullOrEmpty(key))
+                throw new InvalidOperationException("Не выбран UUID устройства (listUUID).");
 
-            if(sn.Length > 32)
-                throw new InvalidOperationException("SN не должен превышать 32 символа.");
+            var row = await db.ListUuids.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.PkListUuid == key, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"UUID '{key}' отсутствует в listUUID.");
+
+            if(!string.Equals(row.FkListSid.Trim(), sid, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    $"SID устройства ({sid}) не совпадает с SID записи listUUID ({row.FkListSid.Trim()}). " +
+                    "Выберите UUID, созданный для этого SID.");
 
             int typeId = await TryResolveTypeDeviceIdAsync(db, configType, ct).ConfigureAwait(false)
                 ?? throw new InvalidOperationException(
                     $"Для типа '{configType}' нет соответствия в taypeDevices.");
 
-            if(!await db.ListSids.AnyAsync(x => x.PkListSid == sid, ct).ConfigureAwait(false))
-                throw new InvalidOperationException($"SID '{sid}' отсутствует в listSID.");
-
-            string? existing = await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false);
-            if(existing != null)
-            {
-                dto.PkListUuid = existing;
-                return;
-            }
-
-            await db.Database.ExecuteSqlRawAsync(
-                @"SET @BDConfigADLDCon_regWebUser =
-                    COALESCE(@BDConfigADLDCon_regWebUser, @app_user, USER());",
-                ct).ConfigureAwait(false);
-
-            await db.Database.ExecuteSqlInterpolatedAsync(
-                $@"INSERT INTO `listUUID`
-                    (`SN`, `FKlistSID`, `FKtaypeDevices`, `idtxtDCon`)
-                   VALUES
-                    ({sn}, {sid}, {typeId}, {10000});",
-                ct).ConfigureAwait(false);
-
-            dto.PkListUuid = await FindListUuidCoreAsync(db, sid, sn, typeId, ct).ConfigureAwait(false)
-                ?? throw new InvalidOperationException(
-                    "Запись listUUID создана, но PKlistUUID не найден.");
+            if(row.FkTypeDevices != typeId)
+                throw new InvalidOperationException(
+                    "Тип устройства не совпадает с типом записи listUUID.");
         }
 
         public async Task<List<TaypeDeviceEntity>> GetTaypeDevicesAsync(CancellationToken ct = default)
@@ -716,7 +774,7 @@ END;", ct).ConfigureAwait(false);
             return (ownAddress, subscriptions);
         }
 
-        private static string GetConfigTypeFromDeviceName(string deviceName)
+        public static string GetConfigTypeFromDeviceName(string deviceName)
         {
             string type = deviceName.Trim()
                 .Replace(" ", "")
@@ -1603,6 +1661,11 @@ END;", ct).ConfigureAwait(false);
             };
         }
 
+        /// <summary>
+        /// Адреса мультикаста устройств, подходящих текущему по пересечению индексов каналов.
+        /// Для PU в MySQL берётся из представления ListExecChannelsMulticastShot одним запросом;
+        /// в остальных случаях (Exec, SQLite, нет представления) используется полный перебор.
+        /// </summary>
         public async Task<List<string>> GetMatchingMulticastAddressesAsync(long deviceId, CancellationToken ct = default)
         {
             var currentConfig = await LoadAsync(deviceId, ct);
@@ -1610,6 +1673,57 @@ END;", ct).ConfigureAwait(false);
             if(currentConfig == null)
                 return new List<string>();
 
+            if(SupportsListUuid && GetMulticastFamily(currentConfig) == MulticastDeviceFamily.Pu)
+            {
+                var indexes = GetMulticastChannelIndexes(currentConfig);
+
+                if(indexes.Count == 0)
+                    return new List<string>();
+
+                try
+                {
+                    return await GetExecMulticastAddressesFromViewAsync(indexes, ct);
+                }
+                catch(DbException ex)
+                {
+                    // Представления нет или нет прав на него: считаем старым способом.
+                    System.Diagnostics.Debug.WriteLine(
+                        $"ListExecChannelsMulticastShot недоступно, полный перебор: {ex.Message}");
+                }
+            }
+
+            return await GetMatchingMulticastAddressesScanAsync(deviceId, currentConfig, ct);
+        }
+
+        private async Task<List<string>> GetExecMulticastAddressesFromViewAsync(
+            IEnumerable<int> indexes, CancellationToken ct)
+        {
+            var indexList = indexes.Distinct().ToList();
+
+            await using var db = CreateDbContext();
+
+            var addresses = await db.Database
+                .SqlQuery<ExecMulticastRow>(
+                    $@"SELECT IndexADLP_ExecChannel AS ExecIndex,
+                              multicastExecChannel  AS Address
+                       FROM ListExecChannelsMulticastShot")
+                .Where(x => indexList.Contains(x.ExecIndex))
+                .Select(x => x.Address)
+                .Distinct()
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            return addresses
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .ToList();
+        }
+
+        private async Task<List<string>> GetMatchingMulticastAddressesScanAsync(
+            long deviceId, DeviceConfigDtoBase currentConfig, CancellationToken ct)
+        {
             var currentFamily = GetMulticastFamily(currentConfig);
 
             if(currentFamily != MulticastDeviceFamily.Pu &&

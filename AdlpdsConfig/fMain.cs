@@ -159,11 +159,6 @@ namespace AdlpdsConfig
 
             try
             {
-                // listUUID для (выбранный SID, SN, тип), если он уже есть.
-                // Создаётся (при необходимости) внутри _repo.SaveAsync.
-                config.PkListUuid = await _repo.FindListUuidAsync(
-                    config.PkListSid, config.Sn, DeviceConfigRepository.ConfigTypeOf(config));
-
                 long? existingId = await FindExistingDeviceIdAsync(config);
 
                 if(existingId.HasValue)
@@ -1006,14 +1001,25 @@ namespace AdlpdsConfig
 
             try
             {
-                long? deviceId = null;
-
-                if(device.Uuid != Guid.Empty)
+                if(device.Uuid == Guid.Empty)
                 {
-                    deviceId = await _repo.FindDeviceIdByListUuidAndBlockAsync(
-                        device.Uuid.ToString("N"),
-                        device.Block);
+                    throw new InvalidOperationException(
+                        "Устройство не передало UUID.");
                 }
+
+                if(!_repo.SupportsListUuid)
+                {
+                    throw new InvalidOperationException(
+                        "Регистрация через listUUID поддерживается только в MySQL.");
+                }
+
+                string pkListUuid = device.Uuid.ToString("D").ToUpperInvariant();
+
+                long deviceId = await _repo.GetOrCreateDeviceIdAsync(
+                    pkListUuid,
+                    device.Block,
+                    device.Name,
+                    device.Endpoint?.Address.ToString());
 
                 var form = new fMulticastEditor(
                     Svc,
@@ -1024,12 +1030,14 @@ namespace AdlpdsConfig
                     Owner = this
                 };
 
+                form.FormClosed += (_, _) => form.Dispose();
                 form.Show();
             }
             catch(Exception ex)
             {
                 MessageBox.Show(
-                    $"Не удалось открыть настройки мультикаста:\n{ex.Message}",
+                    $"Не удалось открыть настройки мультикаста:\n\n" +
+                    ex.GetBaseException().Message,
                     Text,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);

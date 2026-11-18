@@ -122,8 +122,7 @@ public sealed class AdlpDbContext : DbContext
 
             entity.Property(x => x.PkListUuid)
                 .HasColumnName("PKlistUUID")
-                .HasColumnType("char(32)")
-                .HasMaxLength(32)
+                .HasMaxLength(36)
                 .IsFixedLength()
                 .UseCollation("utf8_general_ci")
                 .IsRequired();
@@ -219,7 +218,7 @@ public sealed class AdlpDbContext : DbContext
             entity.Property(e => e.CreatedBy).HasMaxLength(100);
             entity.Property(e => e.UpdatedBy).HasMaxLength(100);
             entity.HasIndex(e => new { e.PkListUuid, e.Block }).IsUnique();
-            entity.Property(x => x.PkListUuid).HasColumnName("PKlistUUID").HasColumnType("char(32)").HasMaxLength(32).IsFixedLength().UseCollation("utf8_general_ci").IsRequired(false);
+            entity.Property(x => x.PkListUuid).HasColumnName("PKlistUUID").HasMaxLength(36).IsFixedLength().UseCollation("utf8_general_ci").IsRequired(false);
             entity.HasOne(x => x.UuidRecord).WithMany().HasForeignKey(x => x.PkListUuid).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.PkListSid).HasColumnName("PKlistSID").HasColumnType("char(8)").HasMaxLength(8).IsFixedLength();
             entity.HasOne(x => x.SidRecord).WithMany().HasForeignKey(x => x.PkListSid).OnDelete(DeleteBehavior.Restrict);

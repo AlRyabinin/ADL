@@ -26,8 +26,9 @@ public sealed partial class DeviceEditorForm : Form
     {
         InitializeComponent();
         Result = initial.Clone();
+        Result.EnsurePartsInitialized();
         Text = isNew ? "Создание виртуального устройства" : "Изменение виртуального устройства";
-        LoadConfig(initial);
+        LoadConfig(Result);
     }
 
     private void generateUuidButton_Click(object? sender, EventArgs e) =>
@@ -47,7 +48,7 @@ public sealed partial class DeviceEditorForm : Form
         _mask.Text = config.Mask;
         _gateway.Text = config.Gateway;
         _mac.Text = config.Mac;
-        _channels.Text = config.ChannelIndexes;
+        _channels.Text = string.Join(",", config.GetChannelIndexes());
         _transport.SelectedIndex = Math.Clamp(config.Transport, (byte)0, (byte)1);
         _ownAddress.Text = config.OwnAddress;
         _subscriptions.Text = string.Join(Environment.NewLine, config.GetSubscriptionList());
@@ -85,6 +86,16 @@ public sealed partial class DeviceEditorForm : Form
             return;
         }
 
+        int? maxChannels = VirtualDeviceConfig.IsExecType(type) ? 24
+            : VirtualDeviceConfig.IsControlType(type) ? 48
+            : VirtualDeviceConfig.IsGateType(type) ? 20
+            : null;
+        if(maxChannels.HasValue && channelTokens.Length > maxChannels.Value)
+        {
+            ShowValidation($"Для типа {type} допускается максимум {maxChannels.Value} каналов.", _channels);
+            return;
+        }
+
         string own = _ownAddress.Text.Trim();
         if(own.Length > 0 && !IsMulticastIpv4(own))
         {
@@ -108,23 +119,45 @@ public sealed partial class DeviceEditorForm : Form
             return;
         }
 
-        Result = new VirtualDeviceConfig
+        var updated = Result.Clone();
+        bool typeChanged = VirtualDeviceConfig.NormalizeType(updated.Type) != type;
+        updated.Enabled = _enabled.Checked;
+        updated.Type = type;
+        updated.DeviceName = _name.Text.Trim();
+        updated.Uuid = uuid;
+        updated.Block = (int)_block.Value;
+        updated.Port = (int)_port.Value;
+        updated.IpAddress = _ip.Text.Trim();
+        updated.Mask = _mask.Text.Trim();
+        updated.Gateway = _gateway.Text.Trim();
+        updated.Mac = _mac.Text.Trim();
+        updated.Transport = (byte)Math.Max(0, _transport.SelectedIndex);
+        updated.OwnAddress = own;
+        updated.SetSubscriptionList(subs);
+
+        string indexes = string.Join(",", channelTokens.Select(x => ushort.Parse(x)).Distinct());
+        if(typeChanged)
         {
-            Enabled = _enabled.Checked,
-            Type = type,
-            DeviceName = _name.Text.Trim(),
-            Uuid = uuid,
-            Block = (int)_block.Value,
-            Port = (int)_port.Value,
-            IpAddress = _ip.Text.Trim(),
-            Mask = _mask.Text.Trim(),
-            Gateway = _gateway.Text.Trim(),
-            Mac = _mac.Text.Trim(),
-            ChannelIndexes = string.Join(",", channelTokens.Select(x => ushort.Parse(x)).Distinct()),
-            Transport = (byte)Math.Max(0, _transport.SelectedIndex),
-            OwnAddress = own,
-            Subscriptions = string.Join(";", subs)
-        };
+            // При смене типа старые дочерние объекты принадлежат другой модели устройства.
+            // Создаём профиль частей заново, сохраняя общие сетевые/экранные параметры и IGMP.
+            updated.ExecChannels = new List<EmulatorExecChannel>();
+            updated.Streams = new List<EmulatorStream>();
+            updated.ControlChannels = new List<EmulatorControlChannel>();
+            updated.Groups = new List<EmulatorGroup>();
+            updated.Pictures = new List<EmulatorPicture>();
+            updated.Buttons = new List<EmulatorControlButton>();
+            updated.PixelgateChannels = new List<EmulatorPixelgateChannel>();
+            updated.GateConveyors = new List<EmulatorGateConveyor>();
+            updated.ChannelIndexes = indexes;
+            updated.PartsModelInitialized = false;
+            updated.EnsurePartsInitialized();
+        }
+        else
+        {
+            updated.ApplyChannelIndexes(indexes);
+        }
+
+        Result = updated;
         DialogResult = DialogResult.OK;
         Close();
     }

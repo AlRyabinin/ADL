@@ -24,7 +24,11 @@ public static class AdlpDbContextFactory
                     x => x.MigrationsAssembly(typeof(AdlpDbContext).Assembly.FullName));
                 break;
             case DatabaseType.MySQL:
-                options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 0)),
+                var csb = new MySqlConnector.MySqlConnectionStringBuilder(connectionString)
+                {
+                    GuidFormat = MySqlConnector.MySqlGuidFormat.None
+                };
+                options.UseMySql(csb.ConnectionString, new MySqlServerVersion(new Version(8, 0, 0)),
                     x => x.MigrationsAssembly(typeof(AdlpDbContext).Assembly.FullName));
                 break;
             default:

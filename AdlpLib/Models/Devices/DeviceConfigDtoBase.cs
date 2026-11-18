@@ -60,8 +60,5 @@ namespace AdlpLib.Models.Devices
         public Guid? Uuid { get; set; }
 
         public string? PkListUuid { get; set; }
-
-        /// <summary>Серийный номер из listUUID.SN, например "SN :091-0191-006910".</summary>
-        public string? Sn { get; set; }
     }
 }
