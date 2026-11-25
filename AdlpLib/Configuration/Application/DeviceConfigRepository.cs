@@ -1580,11 +1580,61 @@ namespace AdlpLib.Configuration.Application
 
                 await tx.CommitAsync(ct);
             }
+            catch(Exception ex) when(IsMulticastAddressInUse(ex))
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+
+                // Адрес успели занять между проверкой и записью (или сработал триггер БД).
+                long? ownerId = null;
+
+                try
+                {
+                    if(!string.IsNullOrEmpty(ownAddress))
+                        ownerId = await GetMulticastAddressOwnerAsync(
+                            ownAddress, deviceId, CancellationToken.None);
+                }
+                catch
+                {
+                    // Владелец нужен только для текста сообщения.
+                }
+
+                throw new MulticastAddressInUseException(ownAddress, ownerId, ex);
+            }
             catch
             {
                 await tx.RollbackAsync(CancellationToken.None);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Ошибка БД «multicast-адрес уже занят»: SIGNAL из триггера
+        /// (MULTICAST_ADDRESS_ALREADY_IN_USE, SQLSTATE 45000, код 1644)
+        /// или нарушение уникального индекса по адресу.
+        /// Определяется по тексту ошибки, чтобы не зависеть от конкретного драйвера БД.
+        /// </summary>
+        private static bool IsMulticastAddressInUse(Exception ex)
+        {
+            for(var e = ex; e != null; e = e.InnerException)
+            {
+                if(e is not DbException db)
+                    continue;
+
+                string m = db.Message ?? string.Empty;
+
+                if(m.Contains("MULTICAST_ADDRESS_ALREADY_IN_USE", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                if(m.Contains("Duplicate entry", StringComparison.OrdinalIgnoreCase) &&
+                   m.Contains("MulticastAddress", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                if(m.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) &&
+                   m.Contains("MulticastAddress", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
 
         private static bool IsMulticastAddress(string address)
@@ -1766,8 +1816,16 @@ namespace AdlpLib.Configuration.Application
                 own.MultiCastAddress = newAddress;
             }
 
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+            }
+            catch(Exception ex) when(IsMulticastAddressInUse(ex))
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                throw new MulticastAddressInUseException(newAddress, null, ex);
+            }
 
             return newAddress;
         }
@@ -2036,16 +2094,6 @@ namespace AdlpLib.Configuration.Application
             }
 
             return sb.ToString();
-        }
-
-        public async Task<int> GetTaypeDeviceIdAsync(string configType, CancellationToken ct = default)
-        {
-            await using var db = CreateDbContext();
-
-            return await TryResolveTypeDeviceIdAsync(db, configType, ct)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException(
-                    $"Для типа '{configType}' нет соответствия в taypeDevices.");
         }
     }
 }

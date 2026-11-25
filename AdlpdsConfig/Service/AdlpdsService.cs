@@ -264,7 +264,6 @@ namespace AdlpdsConfig.Service
             {
                 var notes = new List<string>();
 
-                // 0 это допустимый SystemId (SID 00000000), поэтому подмена только при ошибке чтения.
                 if(!okSid)
                 {
                     systemId = device.SystemId;
@@ -337,12 +336,12 @@ namespace AdlpdsConfig.Service
                 .Select(i => Convert.ToByte(mac.Substring(i * 3, 2), 16))
                 .ToArray();
 
-            Cfg.Config.SetParameters(device.Endpoint, new ParamDataField[]
-            {
+            Cfg.Config.SetParameters(device.Endpoint,
+            [
                 new ParamDataField(
                     new ParamDataId(ObjectCode.PARAM_OBJECT_DEVICE, 0, 0, ParamCode.DeviceNetMAC),
                     new ParamDataValue(ParamDataType.PARAM_DATA_TYPE_RAW, raw))
-            });
+            ]);
         }
 
         /// <summary>
@@ -367,14 +366,14 @@ namespace AdlpdsConfig.Service
                             return;
                         }
 
-                        var value = fields[0].Value;            // ParamDataValue
+                        var value = fields[0].Value;            
                         if(value == null)
                         {
                             onResult?.Invoke(null, false);
                             return;
                         }
 
-                        byte[] raw = value.Value;               // byte[]
+                        byte[] raw = value.Value;               
                         if(raw == null || raw.Length < 6)
                         {
                             onResult?.Invoke(null, false);
@@ -695,8 +694,7 @@ namespace AdlpdsConfig.Service
                             {
                                 if(!TryGetU32Value(value, out uint address))
                                 {
-                                    // Пустой слот подписки не должен
-                                    // аварийно завершать чтение.
+                                    // Пустой слот подписки не должен аварийно завершать чтение.
                                     System.Diagnostics.Debug.WriteLine(
                                             $"ReadMulticast: empty/invalid IGMP slot " +
                                             $"Index={field.Id.Index}, " +

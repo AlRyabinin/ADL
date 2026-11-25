@@ -1,5 +1,4 @@
-﻿
-using AdlpdsConfig.Service;
+﻿using AdlpdsConfig.Service;
 using AdlpLib.Configuration.Application;
 using AdlpLib.Core;
 using AdlpLib.Models.Devices;
@@ -156,7 +155,7 @@ namespace AdlpdsConfig.Controls
                 bool sent = _svc.ReadMulticast(
                     _device,
                     (ignoredDevice, cfg, ok) =>
-    {
+                    {
                         if(IsDisposed || !IsHandleCreated)
                             return;
 
@@ -309,6 +308,25 @@ namespace AdlpdsConfig.Controls
                         "Настройки отправлены устройству. " +
                         "В БД не сохранены: устройство ещё не зарегистрировано.");
                 }
+            }
+            catch(MulticastAddressInUseException ex)
+            {
+                SetBusy(false, "Multicast-адрес уже используется");
+
+                string owner = ex.OwnerDeviceId.HasValue
+                    ? $"устройством ID {ex.OwnerDeviceId.Value}"
+                    : "другим устройством";
+
+                MessageBox.Show(
+                    $"Multicast-адрес {ex.Address} уже используется {owner}.\n\n" +
+                    "Настройки уже отправлены на устройство, но в БД не сохранены. " +
+                    "Укажите другой адрес и запишите настройки ещё раз.",
+                    Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+
+                _ownAddress.Focus();
+                _ownAddress.SelectAll();
             }
             catch(Exception ex)
             {
